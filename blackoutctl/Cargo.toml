@@ -4,3 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+blackout-core = { path = "../blackout-core" }
+serde_json = "1.0.149"
+use = "0.0.1-pre.0"
