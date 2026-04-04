@@ -35,6 +35,52 @@ impl Vault {
         self.version += 1;
     }
 
+    pub fn list_entries(&self) -> Vec<(Entry)> {
+        self.entries.iter().map(|e| e.clone()).collect()
+    }
+
+    // Get entry by service name (returns all matches)
+    pub fn get_entry(&self, service: &str) -> Vec<(Entry)> {
+        self.entries.iter()
+            .filter(|e| e.service == service)
+            .map(|e| e.clone())
+            .collect()
+    }
+
+    pub fn get_entry_by_id(&self, id: Uuid) -> Option<(Uuid, String, String, String)> {
+        self.entries.iter()
+            .find(|e| e.id == id)
+            .map(|e| (e.id, e.service.clone(), e.username.clone(), e.secret.clone()))
+    }
+
+    pub fn remove_entry(&mut self, id: Uuid) -> bool {
+        if let Some(pos) = self.entries.iter().position(|e| e.id == id) {
+            self.entries.remove(pos);
+            self.version += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn update_entry(&mut self, id: Uuid, service: Option<String>, user: Option<String>, pass: Option<String>) -> bool {
+        if let Some(entry) = self.entries.iter_mut().find(|e| e.id == id) {
+            if let Some(s) = service { entry.service = s; }
+            if let Some(u) = user { entry.username = u; }
+            if let Some(p) = pass { entry.secret = p; }
+            entry.updated_at = Utc::now();
+            self.version += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn get_secret(&self, id: Uuid) -> Option<String> {
+        self.entries.iter()
+            .find(|e| e.id == id)
+            .map(|e| e.secret.clone())
+    }
     
 }
 

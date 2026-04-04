@@ -1,16 +1,19 @@
 // blackout-daemon/src/daemon.rs
 use anyhow::Result;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UnixListener;
 use tokio::sync::RwLock;
 use tokio::time::interval;
 use tracing::{debug, info};
+use serde_json;
 
 use blackout_core::storage::Wallet;
 use blackout_core::vault::Vault;
 
 use crate::config::Config;
+use crate::handle::process_request;
 
 /// Mut daemon struct
 pub struct DaemonState {
@@ -65,18 +68,35 @@ impl Daemon {
                     self.process_events().await?;
                 }
                 
-                Ok((mut stream, _addr)) = listener.accept() => {
+                Ok((stream, _addr)) = listener.accept() => {
                     debug!("Nova conexão recebida no socket");
                     
                     let state_clone = Arc::clone(&self.state);
                     let storage_clone = Arc::clone(&self.storage);
                     
                     tokio::spawn(async move {
-                        // TODO: Ler a stream, converter JSON para `Request`, 
-                        // e manipular o estado (state_clone) de acordo.
-                        // Exemplo de acesso ao estado:
-                        // let mut st = state_clone.write().await;
-                        // st.authenticated = true;
+                        use tokio::io::BufReader;
+                        
+                        let (reader, mut writer) = stream.into_split();
+                        let mut buf_reader = BufReader::new(reader);
+                        let mut line = String::new();
+
+                        if let Ok(bytes_read) = buf_reader.read_line(&mut line).await {
+                            if bytes_read > 0 {
+                                use blackout_core::ipc::{Request, Response};
+
+                                let response = match serde_json::from_str::<Request>(&line) {
+                                    Ok(req) => process_request(req, state_clone, storage_clone).await,
+                                    Err(e) => {
+                                        debug!("Failed to parse request: {}", e);
+                                        Response::Error(format!("Invalid request: {}", e))
+                                    }
+                                };
+
+                                let res_json = serde_json::to_string(&response).unwrap() + "\n";
+                                let _ = writer.write_all(res_json.as_bytes()).await;
+                            }
+                        };
                     });
                 }
             }

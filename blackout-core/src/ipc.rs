@@ -5,6 +5,9 @@ pub enum Request {
     Ping,
     Lock,
     Unlock { master_password: String },
+    AddEntry { service: String, user: String, password: String },
+    ListEntries,
+    GetEntry { service: String },
 }
 
 #[derive(Serialize, Deserialize, Debug)]

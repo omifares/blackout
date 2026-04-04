@@ -30,7 +30,7 @@ impl Wallet {
         Self { path }
     }
 
-    pub fn load_vault(&self, password: &str) -> Result<Vault, Box<dyn Error>> {
+    pub fn load_vault(&self, password: &str) -> Result<Vault, Box<dyn Error + Send + Sync>> {
         let file_path = self.path.join("vault.blackout");
         let bytes = fs::read(file_path)?;
 
@@ -68,7 +68,7 @@ impl Wallet {
         &self,
         vault: &Vault,
         password: &str
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let file_path: PathBuf = self.path.join("vault.blackout");
         let temp_path: PathBuf = self.path.join("vault.tmp");
 

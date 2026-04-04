@@ -5,14 +5,44 @@ use std::os::unix::net::UnixStream;
 const SOCKET_PATH: &str = "/tmp/blackout.sock";
 
 fn main() {
-    // Teste 1: Ping
     println!("Testando Ping");
     send_command(Request::Ping);
 
-    // Teste 2: Unlock
     println!("\nTestando Unlock");
     send_command(Request::Unlock {
         master_password: "pass1234".to_string(),
+    });
+
+    println!("\nTestando Unlock");
+    send_command(Request::Lock);
+
+    println!("\nTestando add entry");
+    send_command(Request::AddEntry {
+        service: "google.com".to_string(),
+        user: "teste@gmail.com".to_string(),
+        password: "senha_123".to_string()
+    });
+
+    println!("\nTestando add entry");
+    send_command(Request::AddEntry {
+        service: "google.com".to_string(),
+        user: "teste@gmail.com".to_string(),
+        password: "senha_123".to_string()
+    });
+
+    println!("\nTestando add entry");
+    send_command(Request::AddEntry {
+        service: "google.com".to_string(),
+        user: "teste@gmail.com".to_string(),
+        password: "senha_123".to_string()
+    });
+
+    println!("Testando List Entries");
+    send_command(Request::ListEntries);
+
+    println!("\nTestando Get Entry");
+    send_command(Request::GetEntry {
+        service: "google.com".to_string(),
     });
 }
 
@@ -35,7 +65,28 @@ fn send_command(req: Request) {
 
     match serde_json::from_str::<Response>(&response_line) {
         Ok(Response::Ok(msg)) => println!("Sucesso: {}", msg),
-        Ok(Response::Error(err)) => eprintln!("Erro do Daemon: {}", err),
+        Ok(Response::Error(err)) => {
+            println!("Erro: {}", err);
+            if err.contains("Vault is locked") {
+                prompt_password_and_retry(req);
+            }
+        },
         Err(_) => eprintln!("Erro: Resposta malformada do daemon."),
     }
+}
+
+fn prompt_password_and_retry(req: Request) {
+    use std::io::{self, Write};
+
+    print!("Digite a senha mestre para desbloquear o vault: ");
+    io::stdout().flush().unwrap();
+
+    let mut password = String::new();
+    io::stdin().read_line(&mut password).unwrap();
+    let password = password.trim().to_string();
+
+    let unlock_req = Request::Unlock { master_password: password };
+    send_command(unlock_req);
+    // After unlocking, retry the original request
+    send_command(req);
 }

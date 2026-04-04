@@ -35,7 +35,19 @@ checksum = "db4ce4441f99dbd377ca8a8f57b698c44d0d6e712d8329b5040da5a64aa1ce73"
 dependencies = [
  "base64ct",
  "blake2",
- "password-hash",
+ "password-hash 0.4.2",
+]
+
+[[package]]
+name = "argon2"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c3610892ee6e0cbce8ae2700349fcf8f98adb0dbfbee85aec3c9179d29cc072"
+dependencies = [
+ "base64ct",
+ "blake2",
+ "cpufeatures",
+ "password-hash 0.5.0",
 ]
 
 [[package]]
@@ -60,7 +72,7 @@ checksum = "843867be96c8daad0d758b57df9392b6d8d271134fce549de6ce169ff98a92af"
 name = "blackout-core"
 version = "0.0.1"
 dependencies = [
- "argon2",
+ "argon2 0.4.1",
  "chacha20poly1305",
  "chrono",
  "dirs",
@@ -77,14 +89,17 @@ name = "blackout-daemon"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "argon2 0.5.3",
  "blackout-core",
  "ctrlc",
  "dirs",
  "serde",
  "serde_cbor",
+ "serde_json",
  "tokio",
  "toml",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]
@@ -128,6 +143,12 @@ name = "bumpalo"
 version = "3.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d20789868f4b01b2f2caec9f5c4e0213b41e3e5702a50157d699ae31ced2fcb"
+
+[[package]]
+name = "bytes"
+version = "1.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
 name = "cc"
@@ -537,6 +558,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "password-hash"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "346f04948ba92c43e8469c1ee6736c7563d71012b17d40745260fe106aac2166"
+dependencies = [
+ "base64ct",
+ "rand_core 0.6.4",
+ "subtle",
+]
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -776,6 +808,7 @@ version = "1.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bd1c4c0fc4a7ab90fc15ef6daaa3ec3b893f004f915f2392557ed23237820cd"
 dependencies = [
+ "bytes",
  "libc",
  "mio",
  "pin-project-lite",

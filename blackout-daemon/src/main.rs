@@ -1,5 +1,6 @@
 mod config;
 mod daemon;
+mod handle;
 
 use crate::config::Config;
 use crate::daemon::Daemon;
@@ -9,8 +10,13 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
-    // Inicializa o storage
+
+    let daemon_path = "/tmp/blackout.sock";
+
     let daemon = Daemon::new(Arc::new(Wallet::init()), Config::default());
 
-    daemon.run("/tmp/blackout.sock").await.unwrap();
+    println!("Iniciando o daemon...");
+    println!("Socket path: {}", daemon_path);
+
+    daemon.run(daemon_path).await.unwrap();
 }
