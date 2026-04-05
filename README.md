@@ -1,123 +1,102 @@
 # Blackout
 
-Uma ferramenta de gerenciamento de senhas segura e minimalista, construída em Rust com criptografia end-to-end e arquitetura daemon.
+Uma ferramenta de gerenciamento de senhas segura e minimalista, construída em **Rust** com criptografia *end-to-end* e arquitetura cliente-servidor (daemon).
 
-## 🔐 Características
+## Características Principais
 
-- **Criptografia Forte**: Usa XChaCha20Poly1305 (AEAD de 256-bit) para proteção de dados
-- **Key Derivation**: Argon2id com parâmetros configuráveis para derivar chaves a partir de senhas
-- **Arquitetura Moderna**: Separação entre daemon de armazenamento e CLI client
-- **Segurança em Memória**: Zeroize automático de dados sensíveis após uso
-- **Persistência Segura**: Salt e nonce armazenados com dados criptografados para suportar rotação de chaves
-- **Sem Dependências Desnecessárias**: Minimalista, sem frameworks pesados
+  * **Criptografia Autenticada**: Utiliza **XChaCha20Poly1305** (AEAD de 256-bit) para garantir confidencialidade e integridade dos dados.
+  * **Key Derivation Robusta**: Implementa **Argon2id** com parâmetros configuráveis, oferecendo resistência contra ataques de GPU/ASIC.
+  * **Arquitetura Cliente-Servidor**: Separação rigorosa entre o daemon de armazenamento (`blackoutd`) e o cliente de linha de comando (`blackout`) via sockets Unix.
+  * **Interface TUI Moderna**: Cliente CLI construído com `ratatui`, apresentando tabelas formatadas, layout centralizado e visualização de metadados (como `updated_at`).
+  * **Segurança em Memória**: Uso extensivo da crate `zeroize` para limpar chaves e buffers sensíveis imediatamente após o uso.
+  * **Persistência Segura**: Salt e nonce aleatórios armazenados junto ao *ciphertext*, suportando futuras rotações de chaves.
 
-## 🏗️ Arquitetura
+## Estrutura do Projeto
 
-```
+O projeto é dividido em três componentes principais para garantir modularidade e segurança:
+
+```text
 blackout/
-├── blackout-core/      # Lógica de criptografia, storage e vault
-│   ├── vault.rs        # Estrutura Vault e KDF Argon2id
-│   ├── storage.rs      # Persistência criptografada (XChaCha20Poly1305)
-│   ├── event.rs        # Eventos do sistema
-│   └── lib.rs          # Interface pública
-├── blackout-daemon/    # Serviço background para gerenciar vault
-│   └── main.rs         # Inicialização e gerenciamento de estado
-└── blackoutctl/        # CLI para interação com daemon
-    └── main.rs         # Interface de linha de comando
+├── blackout-core/  # Biblioteca central: Criptografia, Storage (XChaCha20Poly1305) e Vault
+├── blackoutd/     # Daemon: Serviço background que mantém o estado do cofre e gerencia IPC
+└── blackout/   # TUI: Interface interativa para o usuário final
 ```
 
-### Fluxo de Dados
+### Fluxo de Criptografia
 
-1. **Escrita**: Password → Argon2id KDF → Derived Key (32 bytes) → XChaCha20Poly1305 encrypt → Persiste {salt, nonce, ciphertext}
-2. **Leitura**: Load {salt, nonce, ciphertext} → Argon2id KDF com salt → Derived Key → XChaCha20Poly1305 decrypt → Desserializa Vault
+1.  **Derivação**: Password + Salt → **Argon2id** → 256-bit Key.
+2.  **Proteção**: Vault + Key + Nonce → **XChaCha20Poly1305** → Encrypted Storage.
 
-## 🚀 Quick Start
+## Como começar
 
-### Compilar
+### Instalação
+
+Certifique-se de ter o Rust (1.74+) instalado.
 
 ```bash
+# Clone o repositório
+git clone https://github.com/Vinicin1101/blackout
+cd blackout
+
+# Compile para release
 cargo build --release
 ```
 
-## 🔑 Segurança
+### Execução
 
-### Criptografia
+1.  Inicie o serviço em uma janela do terminal:
 
-- **AEAD**: XChaCha20Poly1305 — encriptação autenticada com chave de 256-bit
-- **KDF**: Argon2id — resistente a ataques GPU/ASIC (time: 2, memory: 19MB, parallelism: 1)
-- **Nonce Management**: Nonce aleatório de 24 bytes (XChaCha20), único por mensagem, armazenado junto ao ciphertext
-- **Memory Safety**: Zeroize chaves derivadas e plaintext em memória após uso
+    ```bash
+    ./target/release/blackoutd
+    ```
 
-### Modelo de Ameaça
+2.  Em outro terminal, gerencie suas senhas com o cliente:
 
-Protege contra:
-- ✅ Acesso não autorizado ao arquivo vault.blackout
-- ✅ Ataques de força bruta na senha (Argon2id com custo computacional alto)
-- ✅ Disclosure de memória (zeroize automático)
+    ```bash
+    ./target/release/blackout
+    ```
 
-**Não protege contra**:
-- ❌ Exploração do daemon em execução (se comprometido, dados desencriptados em memória)
-- ❌ Ataques side-channel (tempo, potência)
-- ❌ Malware no sistema
+## Atalhos da Interface (`blackout`)
 
-## 📦 Dependências
+[![Built With Ratatui](https://img.shields.io/badge/Built_With_Ratatui-000?logo=ratatui&logoColor=fff)](https://ratatui.rs/)
 
-- `argon2`: KDF Argon2id
-- `chacha20poly1305`: Criptografia AEAD
-- `serde_cbor`: Serialização de dados
-- `chrono`: Timestamps
-- `uuid`: IDs únicos
-- `zeroize`: Limpeza de memória
-- `rand`: Geração de números aleatórios
-- `dirs`: Diretórios padrão do SO
+| Tecla | Ação |
+| :--- | :--- |
+| `Enter` | Ver detalhes da entrada / Submeter formulário |
+| `n` | Criar nova entrada |
+| `Backspace` | Excluir entrada selecionada |
+| `x` | Bloquear cofre |
+| `Esc` | Voltar / Sair |
+| `Tab` / `B-Tab` | Navegar entre campos do formulário |
 
-## 🛠️ Desenvolvimento
+## Modelo de Ameaça
 
-### Requisitos
+### O que o Blackout protege:
 
-- Rust 1.70+
-- Cargo
+  * ✅ **Acesso ao disco**: Atacantes com o arquivo do cofre não podem ler os dados sem a master password.
+  * ✅ **Força Bruta**: O custo do `Argon2id` retarda significativamente tentativas de cracking.
+  * ✅ **Memory Dumps**: O `zeroize` minimiza o tempo que dados sensíveis residem na RAM.
+  * ✅ **Leak**: Seus dados com você.
 
-### Build Debug
+### O que o Blackout NÃO protege:
 
-```bash
-cargo build
-```
+  * ❌ **Comprometimento do Daemon**: Se o daemon for explorado enquanto o cofre estiver aberto, as senhas em cache podem ser expostas.
+  * ❌ **Keyloggers**: Captura de teclas no nível do Sistema Operacional.
 
+## Roadmap
 
-## 📋 Roadmap
+  - [x] Interface TUI com Tabelas e Layout Centralizado
+  - [x] Renomeação para padrão Daemon Unix (`blackoutd`)
+  - [ ] Edição de entradas
+  - [ ] CLI
+  - [ ] Testes de Unidade e Integração
+  - [ ] Rotação de chaves e troca de Master Password
+  - [ ] Sincronização e Backups encriptados
 
-- [ ] Tests
-- [ ] Rotação de chaves
-- [ ] Interface interativa para CLI
-- [ ] Sincronização entre dispositivos
-- [ ] Suporte a backup encriptado
+## Licença
 
-## 📝 Convenções de Commit
+Distribuído sob a licença **MIT**. Veja `LICENSE` para mais informações.
 
-Este projeto usa [Conventional Commits](https://www.conventionalcommits.org/):
+-----
 
-- `feat:` nova feature
-- `fix:` correção de bug
-- `docs:` apenas documentação
-- `style:` formatação, linting
-- `refactor:` refatoração sem mudança de feature
-- `perf:` otimizações
-- `test:` testes
-- `chore:` dependências, build, etc.
-
-## 📄 Licença
-
-MIT
-
-## 👤 Autor
-
-serafim
-
-## 💡 Inspiração
-
-Este projeto foi inspirado pelo [cipher0](https://github.com/batterdaysahead/cipher0) de [@batterdaysahead](https://github.com/batterdaysahead). Descobri o projeto logo após começar o desenvolvimento do Blackout e suas ideias e implementação influenciaram significativamente a arquitetura de segurança e criptografia aqui presente.
-
----
-
-**⚠️ Disclaimer**: Esta é uma ferramenta educacional/experimental.
+**AVISO**: Esta é uma ferramenta experimental desenvolvida para fins educacionais. Use com cautela e por sua conta e risco.
