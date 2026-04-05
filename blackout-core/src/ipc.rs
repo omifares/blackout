@@ -8,6 +8,8 @@ pub enum Request {
     AddEntry { service: String, user: String, password: String },
     ListEntries,
     GetEntry { service: String },
+    GetEntryById { uuid: uuid::Uuid },
+    DeleteEntry { uuid: uuid::Uuid },
 }
 
 #[derive(Serialize, Deserialize, Debug)]

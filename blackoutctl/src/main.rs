@@ -1,92 +1,53 @@
+mod app;
+mod ui;
+mod events;
+
 use blackout_core::ipc::{Request, Response};
+use crossterm::event::{self, Event, KeyCode};
+
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 
+use color_eyre::Result;
+use ratatui::DefaultTerminal;
+use serde_json;
+
 const SOCKET_PATH: &str = "/tmp/blackout.sock";
 
-fn main() {
-    println!("Testando Ping");
-    send_command(Request::Ping);
+fn main() -> Result<()> {
+    color_eyre::install()?;
+    let mut app = app::App::new();
+    app.check_vault_status(); // Check initial status
 
-    println!("\nTestando Unlock");
-    send_command(Request::Unlock {
-        master_password: "pass1234".to_string(),
-    });
-
-    println!("\nTestando Unlock");
-    send_command(Request::Lock);
-
-    println!("\nTestando add entry");
-    send_command(Request::AddEntry {
-        service: "google.com".to_string(),
-        user: "teste@gmail.com".to_string(),
-        password: "senha_123".to_string()
-    });
-
-    println!("\nTestando add entry");
-    send_command(Request::AddEntry {
-        service: "google.com".to_string(),
-        user: "teste@gmail.com".to_string(),
-        password: "senha_123".to_string()
-    });
-
-    println!("\nTestando add entry");
-    send_command(Request::AddEntry {
-        service: "google.com".to_string(),
-        user: "teste@gmail.com".to_string(),
-        password: "senha_123".to_string()
-    });
-
-    println!("Testando List Entries");
-    send_command(Request::ListEntries);
-
-    println!("\nTestando Get Entry");
-    send_command(Request::GetEntry {
-        service: "google.com".to_string(),
-    });
+    let terminal = ratatui::init();
+    let result = run(terminal, &mut app);
+    ratatui::restore();
+    result
 }
 
-fn send_command(req: Request) {
+pub fn send_command(req: Request) -> Result<Response> {
+    let mut stream = UnixStream::connect(SOCKET_PATH)?;
 
-    let mut stream = match UnixStream::connect(SOCKET_PATH) {
-        Ok(s) => s,
-        Err(_) => {
-            eprintln!("Erro: Não foi possível conectar ao daemon. Ele está rodando?");
-            return;
-        }
-    };
-
-    let req_json = serde_json::to_string(&req).unwrap() + "\n";
-    stream.write_all(req_json.as_bytes()).unwrap();
+    let req_json = serde_json::to_string(&req)? + "\n";
+    stream.write_all(req_json.as_bytes())?;
 
     let mut reader = BufReader::new(stream);
     let mut response_line = String::new();
-    reader.read_line(&mut response_line).unwrap();
+    reader.read_line(&mut response_line)?;
 
-    match serde_json::from_str::<Response>(&response_line) {
-        Ok(Response::Ok(msg)) => println!("Sucesso: {}", msg),
-        Ok(Response::Error(err)) => {
-            println!("Erro: {}", err);
-            if err.contains("Vault is locked") {
-                prompt_password_and_retry(req);
-            }
-        },
-        Err(_) => eprintln!("Erro: Resposta malformada do daemon."),
-    }
+    let response: Response = serde_json::from_str(&response_line)?;
+    Ok(response)
 }
 
-fn prompt_password_and_retry(req: Request) {
-    use std::io::{self, Write};
-
-    print!("Digite a senha mestre para desbloquear o vault: ");
-    io::stdout().flush().unwrap();
-
-    let mut password = String::new();
-    io::stdin().read_line(&mut password).unwrap();
-    let password = password.trim().to_string();
-
-    let unlock_req = Request::Unlock { master_password: password };
-    send_command(unlock_req);
-    // After unlocking, retry the original request
-    send_command(req);
+fn run(mut terminal: DefaultTerminal, app: &mut app::App) -> Result<()> {
+    loop {
+        terminal.draw(|frame| ui::render(frame, app))?;
+        if let Event::Key(key) = event::read()? {
+            if key.code == KeyCode::Char('q') {
+                break;
+            }
+            events::handle_event(app, key);
+        }
+    }
+    Ok(())
 }

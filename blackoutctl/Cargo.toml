@@ -5,5 +5,11 @@ edition = "2024"
 
 [dependencies]
 blackout-core = { path = "../blackout-core" }
+color-eyre = "0.6.5"
+crossterm = "0.29.0"
+ratatui = "0.30.0"
 serde_json = "1.0.149"
+serde = { version = "1.0", features = ["derive"] }
 use = "0.0.1-pre.0"
+uuid = "1.23.0"
+chrono = "0.4.44"

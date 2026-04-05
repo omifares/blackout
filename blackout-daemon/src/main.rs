@@ -1,8 +1,6 @@
-mod config;
 mod daemon;
 mod handle;
 
-use crate::config::Config;
 use crate::daemon::Daemon;
 use blackout_core::storage::Wallet;
 
@@ -13,7 +11,7 @@ async fn main() {
 
     let daemon_path = "/tmp/blackout.sock";
 
-    let daemon = Daemon::new(Arc::new(Wallet::init()), Config::default());
+    let daemon = Daemon::new(Arc::new(Wallet::init()));
 
     println!("Iniciando o daemon...");
     println!("Socket path: {}", daemon_path);

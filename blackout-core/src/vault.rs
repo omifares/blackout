@@ -12,7 +12,11 @@ pub struct Entry {
     pub id: Uuid,
     pub service: String,
     pub username: String,
+    
+    #[serde(default)]
     pub secret: String,
+    
+    #[serde(default)]
     pub updated_at: DateTime<Utc>,
 }
 
@@ -35,12 +39,12 @@ impl Vault {
         self.version += 1;
     }
 
-    pub fn list_entries(&self) -> Vec<(Entry)> {
+    pub fn list_entries(&self) -> Vec<Entry> {
         self.entries.iter().map(|e| e.clone()).collect()
     }
 
     // Get entry by service name (returns all matches)
-    pub fn get_entry(&self, service: &str) -> Vec<(Entry)> {
+    pub fn get_entry(&self, service: &str) -> Vec<Entry> {
         self.entries.iter()
             .filter(|e| e.service == service)
             .map(|e| e.clone())

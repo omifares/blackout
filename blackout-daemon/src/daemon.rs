@@ -2,7 +2,7 @@
 use anyhow::Result;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::net::UnixListener;
 use tokio::sync::RwLock;
 use tokio::time::interval;
@@ -12,7 +12,6 @@ use serde_json;
 use blackout_core::storage::Wallet;
 use blackout_core::vault::Vault;
 
-use crate::config::Config;
 use crate::handle::process_request;
 
 /// Mut daemon struct
@@ -20,26 +19,30 @@ pub struct DaemonState {
     pub vault: Option<Vault>,
     pub authenticated: bool,
     pub running: bool,
+    pub master_password: Option<String>,
+    pub last_activity: Instant,
+    pub auto_lock_timeout: Duration,
 }
 
 /// Main daemon struct
 pub struct Daemon {
     storage: Arc<Wallet>,
-    config: Config,
     state: Arc<RwLock<DaemonState>>,
 }
 
 impl Daemon {
-    pub fn new(storage: Arc<Wallet>, config: Config) -> Self {
+    pub fn new(storage: Arc<Wallet>) -> Self {
         let state = DaemonState {
             vault: None,
             authenticated: false,
             running: true,
+            master_password: None,
+            last_activity: Instant::now(),
+            auto_lock_timeout: Duration::from_secs(30), // 30 segundos
         };
 
         Self {
             storage,
-            config,
             state: Arc::new(RwLock::new(state)),
         }
     }
@@ -56,7 +59,7 @@ impl Daemon {
         perms.set_mode(0o600); // rw-----
         std::fs::set_permissions(socket_path, perms)?;
 
-        let mut check_interval = interval(Duration::from_millis(self.config.event_check_interval_ms));
+        let mut check_interval = interval(Duration::from_millis(500));
 
         loop {
             if !self.state.read().await.running {
@@ -107,45 +110,23 @@ impl Daemon {
 
     /// Pending events processor
     async fn process_events(&self) -> Result<()> {
-        // Exemplo: Ler o estado sem bloqueá-lo por muito tempo
-        let state = self.state.read().await;
+        let mut state = self.state.write().await;
         if state.authenticated {
-            // debug!("Checando eventos para vault autenticado...");
+            if state.last_activity.elapsed() > state.auto_lock_timeout {
+                debug!("Auto-locking vault due to inactivity");
+                state.vault = None;
+                state.authenticated = false;
+                state.master_password = None;
+            }
         }
         Ok(())
     }
 
-    // Graceful shutdown
-    pub async fn shutdown(&self, password_for_save: &str) -> Result<()> {
-        info!("Starting graceful shutdown...");
-
-        let mut state = self.state.write().await;
-
-        if let Some(vault) = &state.vault {
-            debug!("Saving vault state before shutdown...");
-            self.storage.encrypt_and_save_vault(vault, password_for_save)
-                .map_err(|e| anyhow::anyhow!("Failed to save vault during shutdown: {}", e))?;
-            debug!("Vault state saved successfully");
+    /// Update last activity timestamp
+    pub fn update_activity(state: &Arc<RwLock<DaemonState>>) {
+        if let Ok(mut s) = state.try_write() {
+            s.last_activity = Instant::now();
         }
-
-        state.running = false;
-        info!("Daemon shutdown completed successfully");
-        Ok(())
     }
-
-    /// Load vault with password authentication
-    pub async fn load_vault(&self, password: &str) -> Result<()> {
-        info!("Loading vault...");
-        
-        let vault = self.storage
-            .load_vault(password)
-            .map_err(|e| anyhow::anyhow!("Failed to load vault: {}", e))?;
-            
-        let mut state = self.state.write().await;
-        state.vault = Some(vault);
-        state.authenticated = true;
-        
-        info!("Vault loaded successfully");
-        Ok(())
-    }
+    
 }
