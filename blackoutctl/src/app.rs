@@ -4,7 +4,7 @@ use blackout_core::vault::Entry;
 use chrono::{DateTime, Utc};
 
 pub trait EntryView {
-    fn id(&self) -> &uuid::Uuid;
+    fn _id(&self) -> &uuid::Uuid;
     fn service(&self) -> &str;
     fn username(&self) -> &str;
     fn secret(&self) -> &str;
@@ -17,7 +17,7 @@ pub trait EntryView {
 pub struct ListEntryView(pub Entry);
 
 impl EntryView for ListEntryView {
-    fn id(&self) -> &uuid::Uuid { &self.0.id }
+    fn _id(&self) -> &uuid::Uuid { &self.0.id }
     fn service(&self) -> &str { &self.0.service }
     fn username(&self) -> &str { &self.0.username }
     fn secret(&self) -> &str { "" }
@@ -28,7 +28,7 @@ impl EntryView for ListEntryView {
 pub struct DetailEntryView(pub Entry);
 
 impl EntryView for DetailEntryView {
-    fn id(&self) -> &uuid::Uuid { &self.0.id }
+    fn _id(&self) -> &uuid::Uuid { &self.0.id }
     fn service(&self) -> &str { &self.0.service }
     fn username(&self) -> &str { &self.0.username }
     fn secret(&self) -> &str { &self.0.secret }
@@ -47,7 +47,7 @@ pub struct App {
     pub state: AppState,
     pub vault_unlocked: bool,
     pub entries: Vec<Entry>,
-    pub detail_entry: Option<DetailEntryView>,
+    pub _detail_entry: Option<DetailEntryView>,
     pub input_buffer: String, // For password input
     pub form_fields: [String; 3], // service, user, password
     pub current_field: usize,
@@ -64,7 +64,7 @@ impl App {
             form_fields: [String::new(), String::new(), String::new()],
             current_field: 0,
             selected_entry: 0,
-            detail_entry: None,
+            _detail_entry: None,
         }
     }
 

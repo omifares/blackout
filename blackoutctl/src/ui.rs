@@ -1,5 +1,5 @@
-use ratatui::{Frame, layout::{Constraint, Layout, Rect}, macros::horizontal, style::{Color, Style, Stylize}, text::{Line, Span}, widgets::Padding};
-use ratatui::widgets::{Table, Row, Cell, Block, BorderType, Paragraph};
+use ratatui::{Frame, layout::{Constraint, Layout, Rect}, style::{Color, Style, Stylize}, text::{Line, Span}};
+use ratatui::widgets::{Table, Row, Cell, Block, Paragraph};
 
 use crate::app::{App, EntryView, ListEntryView, AppState};
 
