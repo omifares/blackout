@@ -1,6 +1,6 @@
 mod app;
-mod ui;
 mod events;
+mod ui;
 
 use blackout_core::ipc::{Request, Response};
 use crossterm::event::{self, Event, KeyCode};
@@ -43,8 +43,17 @@ fn run(mut terminal: DefaultTerminal, app: &mut app::App) -> Result<()> {
     loop {
         terminal.draw(|frame| ui::render(frame, app))?;
         if let Event::Key(key) = event::read()? {
-            if key.code == KeyCode::Char('q') {
-                break;
+            // Global quit handling only in InitialCheck | UnlockPrompt | EntriesList states
+            if key.code == KeyCode::Esc {
+                if matches!(
+                    app.state,
+                    app::AppState::InitialCheck
+                        | app::AppState::UnlockPrompt
+                        | app::AppState::EntriesList
+                ) && key.code == KeyCode::Esc
+                {
+                    break;
+                }
             }
             events::handle_event(app, key);
         }

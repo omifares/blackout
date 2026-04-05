@@ -1,37 +1,56 @@
 use blackout_core::ipc::{Request, Response};
 use blackout_core::vault::Entry;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local};
 
 pub trait EntryView {
     fn _id(&self) -> &uuid::Uuid;
     fn service(&self) -> &str;
     fn username(&self) -> &str;
     fn secret(&self) -> &str;
-    fn updated_at(&self) -> DateTime<Utc> {
-        DateTime::<Utc>::from(std::time::UNIX_EPOCH)
-    }
+    fn updated_at(&self) -> DateTime<Local>;
 }
 
 #[derive(Debug, Clone)]
 pub struct ListEntryView(pub Entry);
 
 impl EntryView for ListEntryView {
-    fn _id(&self) -> &uuid::Uuid { &self.0.id }
-    fn service(&self) -> &str { &self.0.service }
-    fn username(&self) -> &str { &self.0.username }
-    fn secret(&self) -> &str { "" }
-    fn updated_at(&self) -> DateTime<Utc> { self.0.updated_at }
+    fn _id(&self) -> &uuid::Uuid {
+        &self.0.id
+    }
+    fn service(&self) -> &str {
+        &self.0.service
+    }
+    fn username(&self) -> &str {
+        &self.0.username
+    }
+    fn secret(&self) -> &str {
+        ""
+    }
+    fn updated_at(&self) -> DateTime<Local> {
+        self.0.updated_at
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct DetailEntryView(pub Entry);
 
 impl EntryView for DetailEntryView {
-    fn _id(&self) -> &uuid::Uuid { &self.0.id }
-    fn service(&self) -> &str { &self.0.service }
-    fn username(&self) -> &str { &self.0.username }
-    fn secret(&self) -> &str { &self.0.secret }
+    fn _id(&self) -> &uuid::Uuid {
+        &self.0.id
+    }
+    fn service(&self) -> &str {
+        &self.0.service
+    }
+    fn username(&self) -> &str {
+        &self.0.username
+    }
+    fn secret(&self) -> &str {
+        &self.0.secret
+    }
+    fn updated_at(&self) -> DateTime<Local> {
+        self.0.updated_at
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -40,15 +59,15 @@ pub enum AppState {
     UnlockPrompt,
     EntriesList,
     NewEntryForm,
-    ViewEntry(DetailEntryView),
+    ViewEntry,
 }
 
 pub struct App {
     pub state: AppState,
     pub vault_unlocked: bool,
     pub entries: Vec<Entry>,
-    pub _detail_entry: Option<DetailEntryView>,
-    pub input_buffer: String, // For password input
+    pub detail_entry: Option<DetailEntryView>,
+    pub input_buffer: String,     // For password input
     pub form_fields: [String; 3], // service, user, password
     pub current_field: usize,
     pub selected_entry: usize, // Index of selected entry in list
@@ -64,7 +83,7 @@ impl App {
             form_fields: [String::new(), String::new(), String::new()],
             current_field: 0,
             selected_entry: 0,
-            _detail_entry: None,
+            detail_entry: None,
         }
     }
 
@@ -94,20 +113,22 @@ impl App {
     }
 
     fn parse_entries(&mut self, data: &str) {
-    match serde_json::from_str::<Vec<Entry>>(data) {
-        Ok(entries) => {
-            self.entries = entries;
-            self.selected_entry = 0;
-        }
-        Err(e) => {
-            let debug_info = format!("Parser Error: {}\n\nReceived Data:\n{}", e, data);
-            let _ = std::fs::write("blackout_debug.txt", debug_info);
+        match serde_json::from_str::<Vec<Entry>>(data) {
+            Ok(entries) => {
+                self.entries = entries;
+                self.selected_entry = 0;
+            }
+            Err(e) => {
+                let debug_info = format!("Parser Error: {}\n\nReceived Data:\n{}", e, data);
+                let _ = std::fs::write("blackout_debug.txt", debug_info);
+            }
         }
     }
-}
 
     pub fn unlock_vault(&mut self, password: String) {
-        match crate::send_command(Request::Unlock { master_password: password }) {
+        match crate::send_command(Request::Unlock {
+            master_password: password,
+        }) {
             Ok(Response::Ok(_)) => {
                 self.vault_unlocked = true;
                 self.state = AppState::EntriesList;
@@ -164,8 +185,13 @@ impl App {
                     self.state = AppState::EntriesList;
                     self.reset_form();
                 }
-                Ok(Response::Error(_)) => {
-                    // Handle error
+                Ok(Response::Error(e)) => {
+                    let debug_info = format!(
+                        "Add Entry Error: {}\nData:{}",
+                        e,
+                        &self.form_fields.join(",")
+                    );
+                    let _ = std::fs::write("blackout_debug.txt", debug_info);
                 }
                 Err(_) => {}
             }
@@ -186,8 +212,9 @@ impl App {
                     self.load_entries();
                     self.state = AppState::EntriesList;
                 }
-                Ok(Response::Error(_)) => {
-                    // Handle error
+                Ok(Response::Error(e)) => {
+                    let debug_info = format!("Delete Error: {}\nID:{}", e, id);
+                    let _ = std::fs::write("blackout_debug.txt", debug_info);
                 }
                 Err(_) => {}
             }
@@ -195,12 +222,15 @@ impl App {
     }
 
     pub fn view_selected_entry(&mut self) {
-    let uuid = self.entries[self.selected_entry].id.clone();
-    if let Ok(Response::Ok(data)) = crate::send_command(Request::GetEntryById { uuid }) {
-        if let Ok(entry) = serde_json::from_str::<Entry>(&data) {
-            self.state = AppState::ViewEntry(DetailEntryView(entry));
+        let uuid = self.entries[self.selected_entry].id.clone();
+        if let Ok(Response::Ok(data)) = crate::send_command(Request::GetEntryById { uuid }) {
+            if let Ok(entry) = serde_json::from_str::<Entry>(&data) {
+                self.detail_entry = Some(DetailEntryView(entry));
+                self.state = AppState::ViewEntry;
+            }
+        } else {
+            let debug_info = format!("View Entry Error: Failed to get entry details for ID: {}", uuid);
+            let _ = std::fs::write("blackout_debug.txt", debug_info);
         }
     }
-}
-
 }

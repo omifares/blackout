@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local};
 
 use argon2::{Argon2};
 use rand::RngCore;
@@ -17,7 +17,7 @@ pub struct Entry {
     pub secret: String,
     
     #[serde(default)]
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: DateTime<Local>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -33,7 +33,7 @@ impl Vault {
             service,
             username: user,
             secret: pass,
-            updated_at: Utc::now(),
+            updated_at: Local::now(),
         };
         self.entries.push(new_entry);
         self.version += 1;
@@ -51,10 +51,10 @@ impl Vault {
             .collect()
     }
 
-    pub fn get_entry_by_id(&self, id: Uuid) -> Option<(Uuid, String, String, String)> {
+    pub fn get_entry_by_id(&self, id: Uuid) -> Option<(Uuid, String, String, String, DateTime<Local>)> {
         self.entries.iter()
             .find(|e| e.id == id)
-            .map(|e| (e.id, e.service.clone(), e.username.clone(), e.secret.clone()))
+            .map(|e| (e.id, e.service.clone(), e.username.clone(), e.secret.clone(), e.updated_at.clone()))
     }
 
     pub fn remove_entry(&mut self, id: Uuid) -> bool {
@@ -72,7 +72,7 @@ impl Vault {
             if let Some(s) = service { entry.service = s; }
             if let Some(u) = user { entry.username = u; }
             if let Some(p) = pass { entry.secret = p; }
-            entry.updated_at = Utc::now();
+            entry.updated_at = Local::now();
             self.version += 1;
             true
         } else {

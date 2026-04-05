@@ -72,7 +72,7 @@ impl Daemon {
                 }
                 
                 Ok((stream, _addr)) = listener.accept() => {
-                    debug!("Nova conexão recebida no socket");
+                    debug!("New connection recived!");
                     
                     let state_clone = Arc::clone(&self.state);
                     let storage_clone = Arc::clone(&self.storage);

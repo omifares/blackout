@@ -4,14 +4,13 @@ use crate::app::{App, AppState};
 pub fn handle_event(app: &mut App, key: KeyEvent) {
     match app.state {
         AppState::InitialCheck => {
-            // No input needed, but perhaps allow quit
-            if key.code == KeyCode::Char('q') {
+            if key.code == KeyCode::Esc {
                 // Quit handled in main
             }
         }
         AppState::UnlockPrompt => {
             match key.code {
-                KeyCode::Char('q') => {
+                KeyCode::Esc => {
                     // Quit
                 }
                 KeyCode::Char(c) => {
@@ -29,7 +28,7 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
         }
         AppState::EntriesList => {
             match key.code {
-                KeyCode::Char('q') => {
+                KeyCode::Esc => {
                     // Quit
                 }
                 KeyCode::Char('x') => {
@@ -58,6 +57,13 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 KeyCode::Tab => {
                     app.current_field = (app.current_field + 1) % 3;
                 }
+                KeyCode::BackTab => {
+                    if app.current_field == 0 {
+                        app.current_field = 2;
+                    } else {
+                        app.current_field -= 1;
+                    }
+                }
                 KeyCode::Char(c) => {
                     app.form_fields[app.current_field].push(c);
                 }
@@ -74,17 +80,18 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 _ => {}
             }
         }
-        AppState::ViewEntry(_) => {
+        AppState::ViewEntry => {
             match key.code {
-                KeyCode::Char('q') => {
-                    // Quit
-                }
                 KeyCode::Char('x') => {
                     app.lock_vault();
                 }
                 KeyCode::Backspace => {
                     app.delete_selected_entry();
                     app.state = AppState::EntriesList;
+                }
+                KeyCode::Enter => {
+                    // TODO: copy password to clipboard
+                    // app.copy_field_to_clipboard();
                 }
                 KeyCode::Esc => {
                     app.state = AppState::EntriesList;
