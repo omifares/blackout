@@ -1,8 +1,8 @@
-use serde::{Serialize, Deserialize};
-use uuid::Uuid;
 use chrono::{DateTime, Local};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-use argon2::{Argon2};
+use argon2::Argon2;
 use rand::RngCore;
 use rand::rngs::OsRng;
 use zeroize::Zeroize;
@@ -12,10 +12,10 @@ pub struct Entry {
     pub id: Uuid,
     pub service: String,
     pub username: String,
-    
+
     #[serde(default)]
     pub secret: String,
-    
+
     #[serde(default)]
     pub updated_at: DateTime<Local>,
 }
@@ -40,21 +40,31 @@ impl Vault {
     }
 
     pub fn list_entries(&self) -> Vec<Entry> {
-        self.entries.iter().map(|e| e.clone()).collect()
+        self.entries.iter().cloned().collect()
     }
 
     // Get entry by service name (returns all matches)
     pub fn get_entry(&self, service: &str) -> Vec<Entry> {
-        self.entries.iter()
+        self.entries
+            .iter()
             .filter(|e| e.service == service)
-            .map(|e| e.clone())
+            .cloned()
             .collect()
     }
 
-    pub fn get_entry_by_id(&self, id: Uuid) -> Option<(Uuid, String, String, String, DateTime<Local>)> {
-        self.entries.iter()
-            .find(|e| e.id == id)
-            .map(|e| (e.id, e.service.clone(), e.username.clone(), e.secret.clone(), e.updated_at.clone()))
+    pub fn get_entry_by_id(
+        &self,
+        id: Uuid,
+    ) -> Option<(Uuid, String, String, String, DateTime<Local>)> {
+        self.entries.iter().find(|e| e.id == id).map(|e| {
+            (
+                e.id,
+                e.service.clone(),
+                e.username.clone(),
+                e.secret.clone(),
+                e.updated_at,
+            )
+        })
     }
 
     pub fn remove_entry(&mut self, id: Uuid) -> bool {
@@ -67,11 +77,23 @@ impl Vault {
         }
     }
 
-    pub fn update_entry(&mut self, id: Uuid, service: Option<String>, user: Option<String>, pass: Option<String>) -> bool {
+    pub fn update_entry(
+        &mut self,
+        id: Uuid,
+        service: Option<String>,
+        user: Option<String>,
+        pass: Option<String>,
+    ) -> bool {
         if let Some(entry) = self.entries.iter_mut().find(|e| e.id == id) {
-            if let Some(s) = service { entry.service = s; }
-            if let Some(u) = user { entry.username = u; }
-            if let Some(p) = pass { entry.secret = p; }
+            if let Some(s) = service {
+                entry.service = s;
+            }
+            if let Some(u) = user {
+                entry.username = u;
+            }
+            if let Some(p) = pass {
+                entry.secret = p;
+            }
             entry.updated_at = Local::now();
             self.version += 1;
             true
@@ -81,11 +103,11 @@ impl Vault {
     }
 
     pub fn get_secret(&self, id: Uuid) -> Option<String> {
-        self.entries.iter()
+        self.entries
+            .iter()
             .find(|e| e.id == id)
             .map(|e| e.secret.clone())
     }
-    
 }
 
 /// Derive a key from a password using Argon2id.
@@ -116,7 +138,6 @@ pub fn derive_key_argon2id(
     let argon2 = Argon2::default();
     let mut out = vec![0u8; key_len];
 
-    
     argon2
         .hash_password_into(password.as_bytes(), &salt, &mut out)
         .map_err(|e| format!("argon2 error: {}", e))?;

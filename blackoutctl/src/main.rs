@@ -10,7 +10,6 @@ use std::os::unix::net::UnixStream;
 
 use color_eyre::Result;
 use ratatui::DefaultTerminal;
-use serde_json;
 
 const SOCKET_PATH: &str = "/tmp/blackout.sock";
 
@@ -44,16 +43,16 @@ fn run(mut terminal: DefaultTerminal, app: &mut app::App) -> Result<()> {
         terminal.draw(|frame| ui::render(frame, app))?;
         if let Event::Key(key) = event::read()? {
             // Global quit handling only in InitialCheck | UnlockPrompt | EntriesList states
-            if key.code == KeyCode::Esc {
-                if matches!(
+            if key.code == KeyCode::Esc
+                && matches!(
                     app.state,
                     app::AppState::InitialCheck
                         | app::AppState::UnlockPrompt
                         | app::AppState::EntriesList
-                ) && key.code == KeyCode::Esc
-                {
-                    break;
-                }
+                )
+                && key.code == KeyCode::Esc
+            {
+                break;
             }
             events::handle_event(app, key);
         }

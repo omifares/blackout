@@ -1,5 +1,5 @@
-use crossterm::event::{KeyCode, KeyEvent};
 use crate::app::{App, AppState};
+use crossterm::event::{KeyCode, KeyEvent};
 
 pub fn handle_event(app: &mut App, key: KeyEvent) {
     match app.state {
@@ -52,34 +52,32 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 _ => {}
             }
         }
-        AppState::NewEntryForm => {
-            match key.code {
-                KeyCode::Tab => {
-                    app.current_field = (app.current_field + 1) % 3;
-                }
-                KeyCode::BackTab => {
-                    if app.current_field == 0 {
-                        app.current_field = 2;
-                    } else {
-                        app.current_field -= 1;
-                    }
-                }
-                KeyCode::Char(c) => {
-                    app.form_fields[app.current_field].push(c);
-                }
-                KeyCode::Backspace => {
-                    app.form_fields[app.current_field].pop();
-                }
-                KeyCode::Enter => {
-                    app.submit_form();
-                }
-                KeyCode::Esc => {
-                    app.reset_form();
-                    app.state = AppState::EntriesList;
-                }
-                _ => {}
+        AppState::NewEntryForm => match key.code {
+            KeyCode::Tab => {
+                app.current_field = (app.current_field + 1) % 3;
             }
-        }
+            KeyCode::BackTab => {
+                if app.current_field == 0 {
+                    app.current_field = 2;
+                } else {
+                    app.current_field -= 1;
+                }
+            }
+            KeyCode::Char(c) => {
+                app.form_fields[app.current_field].push(c);
+            }
+            KeyCode::Backspace => {
+                app.form_fields[app.current_field].pop();
+            }
+            KeyCode::Enter => {
+                app.submit_form();
+            }
+            KeyCode::Esc => {
+                app.reset_form();
+                app.state = AppState::EntriesList;
+            }
+            _ => {}
+        },
         AppState::ViewEntry => {
             match key.code {
                 KeyCode::Char('x') => {

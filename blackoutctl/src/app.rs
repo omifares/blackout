@@ -206,7 +206,7 @@ impl App {
 
     pub fn delete_selected_entry(&mut self) {
         if let Some(entry) = self.entries.get(self.selected_entry) {
-            let id = entry.id.clone();
+            let id = entry.id;
             match crate::send_command(Request::DeleteEntry { uuid: id }) {
                 Ok(Response::Ok(_)) => {
                     self.load_entries();
@@ -222,14 +222,17 @@ impl App {
     }
 
     pub fn view_selected_entry(&mut self) {
-        let uuid = self.entries[self.selected_entry].id.clone();
+        let uuid = self.entries[self.selected_entry].id;
         if let Ok(Response::Ok(data)) = crate::send_command(Request::GetEntryById { uuid }) {
             if let Ok(entry) = serde_json::from_str::<Entry>(&data) {
                 self.detail_entry = Some(DetailEntryView(entry));
                 self.state = AppState::ViewEntry;
             }
         } else {
-            let debug_info = format!("View Entry Error: Failed to get entry details for ID: {}", uuid);
+            let debug_info = format!(
+                "View Entry Error: Failed to get entry details for ID: {}",
+                uuid
+            );
             let _ = std::fs::write("blackout_debug.txt", debug_info);
         }
     }

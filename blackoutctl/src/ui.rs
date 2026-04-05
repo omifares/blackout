@@ -1,17 +1,24 @@
-use ratatui::{Frame, layout::{Constraint, Layout, Rect}, style::{Color, Style, Stylize}, text::{Line, Span}};
-use ratatui::widgets::{Table, Row, Cell, Block, Paragraph};
+use ratatui::widgets::{Block, Cell, Paragraph, Row, Table};
+use ratatui::{
+    Frame,
+    layout::{Constraint, Layout, Rect},
+    style::{Color, Style, Stylize},
+    text::{Line, Span},
+};
 
-use crate::app::{App, EntryView, ListEntryView, AppState};
+use crate::app::{App, AppState, EntryView, ListEntryView};
 
 pub fn render(frame: &mut Frame, app: &App) {
-    let vertical = Layout::vertical([Constraint::Length(1), Constraint::Fill(1), Constraint::Length(1)])
+    let vertical = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Fill(1),
+        Constraint::Length(1),
+    ])
     .spacing(1)
     .margin(3);
     let [top, main, bottom] = frame.area().layout(&vertical);
 
-    let title = Line::from_iter([
-        Span::from("Blackout").bold(),
-    ]);
+    let title = Line::from_iter([Span::from("Blackout").bold()]);
     frame.render_widget(title.centered(), top);
 
     match app.state {
@@ -19,28 +26,37 @@ pub fn render(frame: &mut Frame, app: &App) {
         AppState::UnlockPrompt => render_unlock_prompt(frame, main, &app.input_buffer),
         AppState::EntriesList => render_entries_list(frame, main, app),
         AppState::NewEntryForm => render_new_entry_form(frame, main, app),
-        AppState::ViewEntry => render_view_entry(frame, main, app, ),
+        AppState::ViewEntry => render_view_entry(frame, main, app),
     }
 
     let helper = match app.state {
         AppState::InitialCheck => Line::from("(Esc) Quit").dim(),
         AppState::UnlockPrompt => Line::from("(Enter) Submit | (Esc) Quit").dim(),
-        AppState::EntriesList => Line::from("(Esc) Quit | (h) Help | (↵) Select | (⌫) Delete | (n) New | (x) Lock").dim(),
-        AppState::NewEntryForm => Line::from("(Tab) Next field | (BackTab) Prev field | (Enter) Submit | (Esc) Cancel").dim(),
-        AppState::ViewEntry => Line::from("(Esc) Back | (x) Lock | (⌫) Delete | (↵) Copy password (not implemented)").dim(),
+        AppState::EntriesList => {
+            Line::from("(Esc) Quit | (h) Help | (↵) Select | (⌫) Delete | (n) New | (x) Lock").dim()
+        }
+        AppState::NewEntryForm => {
+            Line::from("(Tab) Next field | (BackTab) Prev field | (Enter) Submit | (Esc) Cancel")
+                .dim()
+        }
+        AppState::ViewEntry => {
+            Line::from("(Esc) Back | (x) Lock | (⌫) Delete | (↵) Copy password (not implemented)")
+                .dim()
+        }
     };
     frame.render_widget(helper.centered(), bottom);
 }
 
 fn render_initial_check(frame: &mut Frame, area: Rect) {
-    let block = Block::bordered()
-        .title("Checking vault status...");
+    let block = Block::bordered().title("Checking vault status...");
     frame.render_widget(block, area);
 }
 
 fn render_unlock_prompt(frame: &mut Frame, area: Rect, input: &str) {
     let horizontal = Layout::horizontal([Constraint::Length(22), Constraint::Fill(1)]);
-    let [ label_area, pass_area] = area.centered(Constraint::Percentage(50), Constraint::Percentage(50)).layout(&horizontal);
+    let [label_area, pass_area] = area
+        .centered(Constraint::Percentage(50), Constraint::Percentage(50))
+        .layout(&horizontal);
 
     let label = Line::from("Enter vault password:").bold();
     let pass: String = "*".repeat(input.chars().count());
@@ -51,41 +67,53 @@ fn render_unlock_prompt(frame: &mut Frame, area: Rect, input: &str) {
 }
 
 fn render_entries_list(frame: &mut Frame, area: Rect, app: &App) {
-    let rows: Vec<Row> = app.entries.iter().enumerate().map(|(i, entry)| {
-        let view = ListEntryView(entry.clone());
+    let rows: Vec<Row> = app
+        .entries
+        .iter()
+        .enumerate()
+        .map(|(i, entry)| {
+            let view = ListEntryView(entry.clone());
 
-        // format updated_at as "YYYY-MM-DD HH:MM:SS"
-        let updated_at = view.updated_at().format("%Y-%m-%d %H:%M:%S").to_string();
-        
-        let style = if i == app.selected_entry {
-            Style::new().bold()
-        } else {
-            Style::new().bold().fg(Color::Yellow)
-        };
+            // format updated_at as "YYYY-MM-DD HH:MM:SS"
+            let updated_at = view.updated_at().format("%Y-%m-%d %H:%M:%S").to_string();
 
-        Row::new(vec![
-            Cell::from(view.service().to_string()),
-            Cell::from(view.username().to_string()),
-            Cell::from(updated_at),
-        ])
-        .style(style)
-    }).collect();
-    
-    let table = Table::new(rows, [
-        Constraint::Percentage(40),
-        Constraint::Percentage(40),
-        Constraint::Percentage(20),
-    ])
-    .header(Row::new(vec!["Service", "Username/Email", "Last Modified"])
-    .style(Style::new().bold().underlined()));
+            let style = if i == app.selected_entry {
+                Style::new().bold()
+            } else {
+                Style::new().bold().fg(Color::Yellow)
+            };
+
+            Row::new(vec![
+                Cell::from(view.service().to_string()),
+                Cell::from(view.username().to_string()),
+                Cell::from(updated_at),
+            ])
+            .style(style)
+        })
+        .collect();
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Percentage(40),
+            Constraint::Percentage(40),
+            Constraint::Percentage(20),
+        ],
+    )
+    .header(
+        Row::new(vec!["Service", "Username/Email", "Last Modified"])
+            .style(Style::new().bold().underlined()),
+    );
 
     frame.render_widget(table, area);
 }
 
 fn render_new_entry_form(frame: &mut Frame, area: Rect, app: &App) {
     let vertical = Layout::vertical([Constraint::Percentage(20), Constraint::Percentage(80)]);
-    let [ title_area, form_area] = area.centered(Constraint::Percentage(50), Constraint::Percentage(50)).layout(&vertical);
-    
+    let [title_area, form_area] = area
+        .centered(Constraint::Percentage(50), Constraint::Percentage(50))
+        .layout(&vertical);
+
     let title = Paragraph::new("New entry").centered();
     let text = format!(
         "Service: {}\nUser: {}\nPassword: {}",
@@ -99,11 +127,11 @@ fn render_new_entry_form(frame: &mut Frame, area: Rect, app: &App) {
 
 fn render_view_entry(frame: &mut Frame, area: Rect, app: &App) {
     if app.detail_entry.is_none() {
-         let debug_info = "View Entry Error: No entry details available".to_string();
-         let _ = std::fs::write("blackout_debug.txt", debug_info);
-         return;
+        let debug_info = "View Entry Error: No entry details available".to_string();
+        let _ = std::fs::write("blackout_debug.txt", debug_info);
+        return;
     }
-    
+
     let rows = vec![
         Row::new(vec![
             Cell::from("Service:"),
@@ -124,15 +152,14 @@ fn render_view_entry(frame: &mut Frame, area: Rect, app: &App) {
     ];
 
     // highlight selected row
-    let rows: Vec<Row> = rows.into_iter().map(|row| {
-        row.style(Style::new().bold())
-    }).collect();
+    let rows: Vec<Row> = rows
+        .into_iter()
+        .map(|row| row.style(Style::new().bold()))
+        .collect();
 
-    let table = Table::new(rows, [
-        Constraint::Percentage(50)
-    ])
+    let table = Table::new(rows, [Constraint::Percentage(50)])
         .column_spacing(2)
-        .widths(&[Constraint::Length(15), Constraint::Fill(1)]);
+        .widths([Constraint::Length(15), Constraint::Fill(1)]);
 
     frame.render_widget(table, area);
 }

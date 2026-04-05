@@ -1,4 +1,4 @@
-pub mod vault;
-pub mod storage;
 pub mod event;
 pub mod ipc;
+pub mod storage;
+pub mod vault;

@@ -1,25 +1,33 @@
-use std::sync::Arc;
 use serde_json::json;
+use std::sync::Arc;
 
 use tokio::sync::RwLock;
-use uuid::Uuid;
 use tracing::debug;
+use uuid::Uuid;
 
 use blackout_core::ipc::{Request, Response};
-use blackout_core::storage::{Wallet};
+use blackout_core::storage::Wallet;
 use blackout_core::vault::Vault;
 
 use crate::daemon::DaemonState;
 
-pub async fn process_request(req: Request, state: Arc<RwLock<DaemonState>>, storage: Arc<Wallet>) -> Response {
+pub async fn process_request(
+    req: Request,
+    state: Arc<RwLock<DaemonState>>,
+    storage: Arc<Wallet>,
+) -> Response {
     // Update activity timestamp on every request
     crate::daemon::Daemon::update_activity(&state);
-    
+
     match req {
         Request::Ping => Response::Ok("Pong!".into()),
         Request::Lock => handle_lock(state).await,
         Request::Unlock { master_password } => handle_unlock(master_password, state, storage).await,
-        Request::AddEntry { service, user, password } => handle_add_entry(service, user, password, state, storage).await,
+        Request::AddEntry {
+            service,
+            user,
+            password,
+        } => handle_add_entry(service, user, password, state, storage).await,
         Request::ListEntries => handle_list_entries(state).await,
         Request::GetEntry { service } => handle_get_entry(service, state).await,
         Request::GetEntryById { uuid } => handle_get_entry_by_id(uuid, state).await,
@@ -27,7 +35,11 @@ pub async fn process_request(req: Request, state: Arc<RwLock<DaemonState>>, stor
     }
 }
 
-async fn handle_unlock(password: String, state: Arc<RwLock<DaemonState>>, storage: Arc<Wallet>) -> Response {
+async fn handle_unlock(
+    password: String,
+    state: Arc<RwLock<DaemonState>>,
+    storage: Arc<Wallet>,
+) -> Response {
     if !storage.exists() {
         debug!("Vault file not found, creating a new encrypted vault...");
         let new_vault = Vault::default();
@@ -63,11 +75,17 @@ async fn handle_lock(state: Arc<RwLock<DaemonState>>) -> Response {
     st.authenticated = false;
     st.vault = None;
     st.master_password = None;
-    
+
     Response::Ok("Vault locked and memory cleared".into())
 }
 
-async fn handle_add_entry(service: String, user: String, pass: String, state: Arc<RwLock<DaemonState>>, storage: Arc<Wallet>) -> Response {
+async fn handle_add_entry(
+    service: String,
+    user: String,
+    pass: String,
+    state: Arc<RwLock<DaemonState>>,
+    storage: Arc<Wallet>,
+) -> Response {
     let mut st = state.write().await;
     if !st.authenticated {
         debug!("Vault is locked. Please unlock it first.");
@@ -78,11 +96,11 @@ async fn handle_add_entry(service: String, user: String, pass: String, state: Ar
     if let Some(vault) = &mut st.vault {
         vault.add_entry(service, user, pass);
         // Save after adding
-        if let Some(p) = password.as_ref() {
-            if let Err(e) = storage.encrypt_and_save_vault(vault, p) {
-                debug!("Failed to save vault: {}", e);
-                return Response::Error(format!("Failed to save vault: {}", e));
-            }
+        if let Some(p) = password.as_ref()
+            && let Err(e) = storage.encrypt_and_save_vault(vault, p)
+        {
+            debug!("Failed to save vault: {}", e);
+            return Response::Error(format!("Failed to save vault: {}", e));
         }
         Response::Ok("Entry added successfully".into())
     } else {
@@ -99,12 +117,18 @@ async fn handle_list_entries(state: Arc<RwLock<DaemonState>>) -> Response {
     }
 
     if let Some(vault) = &st.vault {
-        let entries: Vec<serde_json::Value> = vault.list_entries().iter().map(|entry| json!({
-            "id": entry.id.to_string(),
-            "service": entry.service,
-            "username": entry.username,
-            "updated_at": entry.updated_at.to_string(),
-        })).collect();
+        let entries: Vec<serde_json::Value> = vault
+            .list_entries()
+            .iter()
+            .map(|entry| {
+                json!({
+                    "id": entry.id.to_string(),
+                    "service": entry.service,
+                    "username": entry.username,
+                    "updated_at": entry.updated_at.to_string(),
+                })
+            })
+            .collect();
         Response::Ok(serde_json::to_string(&entries).unwrap())
     } else {
         debug!("Vault is not loaded.");
@@ -120,7 +144,11 @@ async fn handle_get_entry(service: String, state: Arc<RwLock<DaemonState>>) -> R
     }
 
     if let Some(vault) = &st.vault {
-        let entries: Vec<String> = vault.get_entry(&service).iter().map(|entry| json!(entry).to_string()).collect();
+        let entries: Vec<String> = vault
+            .get_entry(&service)
+            .iter()
+            .map(|entry| json!(entry).to_string())
+            .collect();
         if !entries.is_empty() {
             Response::Ok(format!("{:?}", entries))
         } else {
@@ -161,7 +189,11 @@ async fn handle_get_entry_by_id(uuid: Uuid, state: Arc<RwLock<DaemonState>>) -> 
     }
 }
 
-async fn handle_delete_entry(uuid: uuid::Uuid, state: Arc<RwLock<DaemonState>>, storage: Arc<Wallet>) -> Response {
+async fn handle_delete_entry(
+    uuid: uuid::Uuid,
+    state: Arc<RwLock<DaemonState>>,
+    storage: Arc<Wallet>,
+) -> Response {
     let mut st = state.write().await;
     if !st.authenticated {
         debug!("Vault is locked. Please unlock it first.");
@@ -174,11 +206,11 @@ async fn handle_delete_entry(uuid: uuid::Uuid, state: Arc<RwLock<DaemonState>>, 
             Ok(id) => {
                 if vault.remove_entry(id) {
                     // Save after deletion
-                    if let Some(p) = password.as_ref() {
-                        if let Err(e) = storage.encrypt_and_save_vault(vault, p) {
-                            debug!("Failed to save vault: {}", e);
-                            return Response::Error(format!("Failed to save vault: {}", e));
-                        }
+                    if let Some(p) = password.as_ref()
+                        && let Err(e) = storage.encrypt_and_save_vault(vault, p)
+                    {
+                        debug!("Failed to save vault: {}", e);
+                        return Response::Error(format!("Failed to save vault: {}", e));
                     }
                     Response::Ok("Entry deleted successfully".into())
                 } else {

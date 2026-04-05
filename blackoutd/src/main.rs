@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
-
     let daemon_path = "/tmp/blackout.sock";
 
     let daemon = Daemon::new(Arc::new(Wallet::init()));

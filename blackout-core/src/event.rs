@@ -1,8 +1,8 @@
-use uuid::Uuid;
-use serde::{Serialize, Deserialize};
-use std::fs::{OpenOptions, File};
+use serde::{Deserialize, Serialize};
+use serde_cbor::{from_slice, to_vec};
+use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Result, Write};
-use serde_cbor::{to_vec, from_slice};
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum EventType {
@@ -50,8 +50,7 @@ pub fn load_events() -> Result<Vec<Event>> {
         let mut buf = vec![0u8; len];
         file.read_exact(&mut buf)?;
 
-        let event = from_slice(&buf)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let event = from_slice(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         events.push(event);
     }
 
