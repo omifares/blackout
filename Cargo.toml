@@ -3,5 +3,5 @@ resolver = "3"
 members = [
     "blackout-core",
     "blackoutd",
-    "blackoutctl"
+    "blackout"
 ]

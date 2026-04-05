@@ -150,6 +150,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "843867be96c8daad0d758b57df9392b6d8d271134fce549de6ce169ff98a92af"
 
 [[package]]
+name = "blackout"
+version = "0.1.0"
+dependencies = [
+ "blackout-core",
+ "chrono",
+ "color-eyre",
+ "crossterm",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "use",
+ "uuid",
+]
+
+[[package]]
 name = "blackout-core"
 version = "0.0.1"
 dependencies = [
@@ -163,21 +178,6 @@ dependencies = [
  "serde_cbor",
  "uuid",
  "zeroize",
-]
-
-[[package]]
-name = "blackoutctl"
-version = "0.1.0"
-dependencies = [
- "blackout-core",
- "chrono",
- "color-eyre",
- "crossterm",
- "ratatui",
- "serde",
- "serde_json",
- "use",
- "uuid",
 ]
 
 [[package]]
