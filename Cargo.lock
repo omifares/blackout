@@ -166,7 +166,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "blackout-daemon"
+name = "blackoutctl"
+version = "0.1.0"
+dependencies = [
+ "blackout-core",
+ "chrono",
+ "color-eyre",
+ "crossterm",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "use",
+ "uuid",
+]
+
+[[package]]
+name = "blackoutd"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -182,21 +197,6 @@ dependencies = [
  "tracing",
  "uuid",
  "zeroize",
-]
-
-[[package]]
-name = "blackoutctl"
-version = "0.1.0"
-dependencies = [
- "blackout-core",
- "chrono",
- "color-eyre",
- "crossterm",
- "ratatui",
- "serde",
- "serde_json",
- "use",
- "uuid",
 ]
 
 [[package]]
