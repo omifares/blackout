@@ -1,14 +1,14 @@
 use crate::vault::{Vault, derive_key_argon2id};
-use std::{fs};
-use std::path::{PathBuf};
-use std::error::Error;
-use std::result::Result;
+use chacha20poly1305::XChaCha20Poly1305;
+use chacha20poly1305::XNonce;
+use chacha20poly1305::aead::{Aead, KeyInit, OsRng};
 use rand::RngCore;
 use serde_cbor;
-use chacha20poly1305::XChaCha20Poly1305;
-use chacha20poly1305::aead::{Aead, KeyInit, OsRng};
-use chacha20poly1305::XNonce;
-use std::io::{Write};
+use std::error::Error;
+use std::fs;
+use std::io::Write;
+use std::path::PathBuf;
+use std::result::Result;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct EncryptedVault {
@@ -30,7 +30,7 @@ impl Wallet {
         Self { path }
     }
 
-    pub fn load_vault(&self, password: &str) -> Result<Vault, Box<dyn Error>> {
+    pub fn load_vault(&self, password: &str) -> Result<Vault, Box<dyn Error + Send + Sync>> {
         let file_path = self.path.join("vault.blackout");
         let bytes = fs::read(file_path)?;
 
@@ -39,12 +39,11 @@ impl Wallet {
         let (derived_key, _) = derive_key_argon2id(password, Some(&encrypted.salt), 16, 32)?;
 
         // Decrypt the vault
-        let aead = XChaCha20Poly1305::new(
-            chacha20poly1305::Key::from_slice(&derived_key[..32])
-        );
+        let aead = XChaCha20Poly1305::new(chacha20poly1305::Key::from_slice(&derived_key[..32]));
         let nonce = XNonce::from_slice(&encrypted.nonce);
-        
-        let plaintext = aead.decrypt(nonce, encrypted.ciphertext.as_ref())
+
+        let plaintext = aead
+            .decrypt(nonce, encrypted.ciphertext.as_ref())
             .map_err(|_| "Decryption failed")?;
 
         let vault: Vault = serde_cbor::from_slice(&plaintext)?;
@@ -67,8 +66,8 @@ impl Wallet {
     pub fn encrypt_and_save_vault(
         &self,
         vault: &Vault,
-        password: &str
-    ) -> Result<(), Box<dyn Error>> {
+        password: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let file_path: PathBuf = self.path.join("vault.blackout");
         let temp_path: PathBuf = self.path.join("vault.tmp");
 
@@ -77,17 +76,16 @@ impl Wallet {
         // Derive key from password using Argon2id
         let (derived_key, salt) = derive_key_argon2id(password, None, 16, 32)?;
 
-        let aead = XChaCha20Poly1305::new(
-            chacha20poly1305::Key::from_slice(&derived_key[..32])
-        );
-        
+        let aead = XChaCha20Poly1305::new(chacha20poly1305::Key::from_slice(&derived_key[..32]));
+
         // Generate a random nonce
         let mut nonce_bytes = [0u8; 24];
         OsRng.fill_bytes(&mut nonce_bytes);
         let nonce = XNonce::from_slice(&nonce_bytes);
 
         // Encrypt the vault
-        let ciphertext = aead.encrypt(nonce, serialized.as_ref())
+        let ciphertext = aead
+            .encrypt(nonce, serialized.as_ref())
             .map_err(|_| "Encryption failed")?;
 
         // Create encrypted vault structure
@@ -106,5 +104,4 @@ impl Wallet {
 
         Ok(())
     }
-
 }
