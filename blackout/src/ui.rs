@@ -8,14 +8,15 @@ use ratatui::{
 
 use crate::app::{App, AppState, EntryView, ListEntryView};
 
-pub fn render(frame: &mut Frame, app: &App) {
+pub fn render(frame: &mut Frame, app: &mut App) {
     let vertical = Layout::vertical([
         Constraint::Length(1),
         Constraint::Fill(1),
         Constraint::Length(1),
     ])
     .spacing(1)
-    .margin(3);
+    .horizontal_margin(3)
+    .vertical_margin(1);
     let [top, main, bottom] = frame.area().layout(&vertical);
 
     let title = Line::from_iter([Span::from("Blackout").bold()]);
@@ -66,29 +67,20 @@ fn render_unlock_prompt(frame: &mut Frame, area: Rect, input: &str) {
     frame.render_widget(pass_paragraph, pass_area);
 }
 
-fn render_entries_list(frame: &mut Frame, area: Rect, app: &App) {
+fn render_entries_list(frame: &mut Frame, area: Rect, app: &mut App) {
     let rows: Vec<Row> = app
         .entries
         .iter()
-        .enumerate()
-        .map(|(i, entry)| {
+        .map(|entry| {
             let view = ListEntryView(entry.clone());
-
-            // format updated_at as "YYYY-MM-DD HH:MM:SS"
             let updated_at = view.updated_at().format("%Y-%m-%d %H:%M:%S").to_string();
-
-            let style = if i == app.selected_entry {
-                Style::new().bold()
-            } else {
-                Style::new().bold().fg(Color::Yellow)
-            };
 
             Row::new(vec![
                 Cell::from(view.service().to_string()),
                 Cell::from(view.username().to_string()),
                 Cell::from(updated_at),
             ])
-            .style(style)
+            .style(Style::new()) 
         })
         .collect();
 
@@ -103,9 +95,14 @@ fn render_entries_list(frame: &mut Frame, area: Rect, app: &App) {
     .header(
         Row::new(vec!["Service", "Username/Email", "Last Modified"])
             .style(Style::new().bold().underlined()),
-    );
+    )
 
-    frame.render_widget(table, area);
+    .style(Style::new().bold())
+    .highlight_symbol("|"); 
+
+    // Renderizamos passando o estado da tabela. 
+    // O ratatui vai fazer a matemática do scroll automaticamente!
+    frame.render_stateful_widget(table, area, &mut app.table_state);
 }
 
 fn render_new_entry_form(frame: &mut Frame, area: Rect, app: &App) {

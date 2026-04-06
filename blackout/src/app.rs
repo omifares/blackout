@@ -3,6 +3,8 @@ use blackout_core::vault::Entry;
 
 use chrono::{DateTime, Local};
 
+use ratatui::widgets::TableState;
+
 pub trait EntryView {
     fn _id(&self) -> &uuid::Uuid;
     fn service(&self) -> &str;
@@ -70,11 +72,14 @@ pub struct App {
     pub input_buffer: String,     // For password input
     pub form_fields: [String; 3], // service, user, password
     pub current_field: usize,
-    pub selected_entry: usize, // Index of selected entry in list
+    pub table_state: TableState,
 }
 
 impl App {
     pub fn new() -> Self {
+        let mut table_state = TableState::default();
+        table_state.select(Some(0));
+
         Self {
             state: AppState::InitialCheck,
             vault_unlocked: false,
@@ -82,9 +87,15 @@ impl App {
             input_buffer: String::new(),
             form_fields: [String::new(), String::new(), String::new()],
             current_field: 0,
-            selected_entry: 0,
             detail_entry: None,
+            table_state,
         }
+    }
+
+    pub fn get_selected_entry(&self) -> Option<&Entry> {
+        self.table_state
+            .selected()
+            .and_then(|i| self.entries.get(i))
     }
 
     pub fn check_vault_status(&mut self) {
@@ -116,7 +127,7 @@ impl App {
         match serde_json::from_str::<Vec<Entry>>(data) {
             Ok(entries) => {
                 self.entries = entries;
-                self.selected_entry = 0;
+                self.table_state.select(Some(0));
             }
             Err(e) => {
                 let debug_info = format!("Parser Error: {}\n\nReceived Data:\n{}", e, data);
@@ -156,16 +167,19 @@ impl App {
 
     pub fn next_entry(&mut self) {
         if !self.entries.is_empty() {
-            self.selected_entry = (self.selected_entry + 1) % self.entries.len();
+            self.table_state.select(Some(
+                (self.table_state.selected().unwrap_or(0) + 1) % self.entries.len(),
+            ));
         }
     }
 
     pub fn prev_entry(&mut self) {
         if !self.entries.is_empty() {
-            if self.selected_entry == 0 {
-                self.selected_entry = self.entries.len() - 1;
+            let current_index = self.table_state.selected().unwrap_or(0);
+            if current_index == 0 {
+                self.table_state.select(Some(self.entries.len() - 1));
             } else {
-                self.selected_entry -= 1;
+                self.table_state.select(Some(current_index - 1));
             }
         }
     }
@@ -201,19 +215,19 @@ impl App {
     pub fn reset_form(&mut self) {
         self.form_fields = [String::new(), String::new(), String::new()];
         self.current_field = 0;
-        self.selected_entry = 0;
+        self.table_state.select(Some(0));
     }
 
     pub fn delete_selected_entry(&mut self) {
-        if let Some(entry) = self.entries.get(self.selected_entry) {
-            let id = entry.id;
-            match crate::send_command(Request::DeleteEntry { uuid: id }) {
+        if let Some(entry) = self.get_selected_entry() {
+            let uuid = entry.id;
+            match crate::send_command(Request::DeleteEntry { uuid: uuid }) {
                 Ok(Response::Ok(_)) => {
                     self.load_entries();
                     self.state = AppState::EntriesList;
                 }
                 Ok(Response::Error(e)) => {
-                    let debug_info = format!("Delete Error: {}\nID:{}", e, id);
+                    let debug_info = format!("Delete Error: {}\nID:{}", e, uuid);
                     let _ = std::fs::write("blackout_debug.txt", debug_info);
                 }
                 Err(_) => {}
@@ -222,18 +236,20 @@ impl App {
     }
 
     pub fn view_selected_entry(&mut self) {
-        let uuid = self.entries[self.selected_entry].id;
-        if let Ok(Response::Ok(data)) = crate::send_command(Request::GetEntryById { uuid }) {
-            if let Ok(entry) = serde_json::from_str::<Entry>(&data) {
-                self.detail_entry = Some(DetailEntryView(entry));
-                self.state = AppState::ViewEntry;
+        if let Some(entry) = self.get_selected_entry() {
+            let uuid = entry.id;
+            if let Ok(Response::Ok(data)) = crate::send_command(Request::GetEntryById { uuid }) {
+                if let Ok(entry) = serde_json::from_str::<Entry>(&data) {
+                    self.detail_entry = Some(DetailEntryView(entry));
+                    self.state = AppState::ViewEntry;
+                }
+            } else {
+                let debug_info = format!(
+                    "View Entry Error: Failed to get entry details for ID: {}",
+                    uuid
+                );
+                let _ = std::fs::write("blackout_debug.txt", debug_info);
             }
-        } else {
-            let debug_info = format!(
-                "View Entry Error: Failed to get entry details for ID: {}",
-                uuid
-            );
-            let _ = std::fs::write("blackout_debug.txt", debug_info);
         }
     }
 }
