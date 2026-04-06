@@ -23,7 +23,8 @@ pub struct Wallet {
 
 impl Wallet {
     pub fn init() -> Self {
-        let path = dirs::home_dir().unwrap().join(".blackout");
+        // $XDG_DATA_LOCAL_DIR/blackout/vault.blackout
+        let path = dirs::data_local_dir().unwrap().join("blackout");
         if !path.exists() {
             fs::create_dir_all(&path).expect("Failed to create directory");
         }
