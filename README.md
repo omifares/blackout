@@ -55,6 +55,9 @@ cargo build --release
     ```bash
     ./target/release/blackout
     ```
+## Demo
+
+![](https://i.imgur.com/9AbkTcy.gif)
 
 ## Atalhos da Interface (`blackout`)
 
