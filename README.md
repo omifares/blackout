@@ -31,30 +31,18 @@ blackout/
 
 ### Instalação
 
-Certifique-se de ter o Rust (1.74+) instalado.
-
 ```bash
 # Clone o repositório
 git clone https://github.com/Vinicin1101/blackout
 cd blackout
 
-# Compile para release
-cargo build --release
+# Dê permissão de execução ao script
+chmod +x setup.sh
+
+# Instale o Blackout para o seu usuário
+./setup.sh install
 ```
 
-### Execução
-
-1.  Inicie o serviço em uma janela do terminal:
-
-    ```bash
-    ./target/release/blackoutd
-    ```
-
-2.  Em outro terminal, gerencie suas senhas com o cliente:
-
-    ```bash
-    ./target/release/blackout
-    ```
 ## Demo
 
 ![](https://i.imgur.com/9AbkTcy.gif)
