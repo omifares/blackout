@@ -1,12 +1,14 @@
 // blackout-daemon/src/daemon.rs
 use anyhow::Result;
+use libc;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::net::UnixListener;
 use tokio::sync::RwLock;
 use tokio::time::interval;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use blackout_core::storage::Wallet;
 use blackout_core::vault::Vault;
@@ -27,9 +29,12 @@ pub struct DaemonState {
 pub struct Daemon {
     storage: Arc<Wallet>,
     state: Arc<RwLock<DaemonState>>,
+    socket_path: PathBuf,
+    uid: u32,
 }
 
 impl Daemon {
+
     pub fn new(storage: Arc<Wallet>) -> Self {
         let state = DaemonState {
             vault: None,
@@ -37,26 +42,32 @@ impl Daemon {
             running: true,
             master_password: None,
             last_activity: Instant::now(),
-            auto_lock_timeout: Duration::from_secs(30), // 30 segundos
+            auto_lock_timeout: Duration::from_secs(30),
         };
+
+        let uid = unsafe { libc::geteuid() };
+        let socket_path = blackout_core::ipc::get_socket_path();
 
         Self {
             storage,
             state: Arc::new(RwLock::new(state)),
+            socket_path: socket_path,
+            uid: uid,
         }
     }
 
     /// Starter
-    pub async fn run(&self, socket_path: &str) -> Result<()> {
+    pub async fn run(&self) -> Result<()> {
         info!("Daemon started! Waiting for authentication...");
 
-        let _ = std::fs::remove_file(socket_path); // Clean old socket
-        let listener = UnixListener::bind(socket_path)?;
+        let _ = std::fs::remove_file(&self.socket_path);
 
-        let mut perms = std::fs::metadata(socket_path)?.permissions();
-        use std::os::unix::fs::PermissionsExt;
-        perms.set_mode(0o600); // rw-----
-        std::fs::set_permissions(socket_path, perms)?;
+        let listener = {
+            let old_umask = unsafe { libc::umask(0o077) };
+            let bind_result = UnixListener::bind(&self.socket_path);
+            unsafe { libc::umask(old_umask) };
+            bind_result? 
+        };
 
         let mut check_interval = interval(Duration::from_millis(500));
 
@@ -71,7 +82,19 @@ impl Daemon {
                 }
 
                 Ok((stream, _addr)) = listener.accept() => {
-                    debug!("New connection recived!");
+                    match stream.peer_cred() {
+                        Ok(cred) => {
+                            if cred.uid() != self.uid {
+                                warn!("HACK ATTEMPT: UID {} tentou se conectar, mas o dono é {}. Conexão derrubada.", cred.uid(), &self.uid);
+                                continue;
+                            }
+                            debug!("Conexão aceita do UID {}", cred.uid());
+                        }
+                        Err(e) => {
+                            warn!("Falha ao ler credenciais do socket: {}. Derrubando.", e);
+                            continue;
+                        }
+                    }
 
                     let state_clone = Arc::clone(&self.state);
                     let storage_clone = Arc::clone(&self.storage);
@@ -83,8 +106,8 @@ impl Daemon {
                         let mut buf_reader = BufReader::new(reader);
                         let mut line = String::new();
 
-                        if let Ok(bytes_read) = buf_reader.read_line(&mut line).await
-                            && bytes_read > 0 {
+                        if let Ok(bytes_read) = buf_reader.read_line(&mut line).await {
+                            if bytes_read > 0 {
                                 use blackout_core::ipc::{Request, Response};
 
                                 let response = match serde_json::from_str::<Request>(&line) {
@@ -97,11 +120,14 @@ impl Daemon {
 
                                 let res_json = serde_json::to_string(&response).unwrap() + "\n";
                                 let _ = writer.write_all(res_json.as_bytes()).await;
-                            };
+                            }
+                        };
                     });
                 }
             }
         }
+
+        let _ = std::fs::remove_file(&self.socket_path);
 
         Ok(())
     }

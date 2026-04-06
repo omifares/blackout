@@ -11,8 +11,6 @@ use std::os::unix::net::UnixStream;
 use color_eyre::Result;
 use ratatui::DefaultTerminal;
 
-const SOCKET_PATH: &str = "/tmp/blackout.sock";
-
 fn main() -> Result<()> {
     color_eyre::install()?;
     let mut app = app::App::new();
@@ -25,7 +23,7 @@ fn main() -> Result<()> {
 }
 
 pub fn send_command(req: Request) -> Result<Response> {
-    let mut stream = UnixStream::connect(SOCKET_PATH)?;
+    let mut stream = UnixStream::connect(blackout_core::ipc::get_socket_path())?;
 
     let req_json = serde_json::to_string(&req)? + "\n";
     stream.write_all(req_json.as_bytes())?;
