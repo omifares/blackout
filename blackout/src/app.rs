@@ -5,6 +5,9 @@ use chrono::{DateTime, Local};
 
 use ratatui::widgets::TableState;
 
+use std::process::{Command, Stdio};
+use std::io::Write;
+
 pub trait EntryView {
     fn _id(&self) -> &uuid::Uuid;
     fn service(&self) -> &str;
@@ -74,6 +77,7 @@ pub struct App {
     pub form_fields: [String; 3], // service, user, password
     pub current_field: usize,
     pub table_state: TableState,
+    pub status_message: Option<String>,
 }
 
 impl App {
@@ -90,6 +94,7 @@ impl App {
             current_field: 0,
             detail_entry: None,
             table_state,
+            status_message: None,
         }
     }
 
@@ -198,6 +203,7 @@ impl App {
                 Ok(Response::Ok(_)) => {
                     self.load_entries();
                     self.state = AppState::EntriesList;
+                    self.status_message = Some("Entry successfully added!".to_string());
                     self.reset_form();
                 }
                 Ok(Response::Error(e)) => {
@@ -226,6 +232,7 @@ impl App {
                 Ok(Response::Ok(_)) => {
                     self.load_entries();
                     self.state = AppState::EntriesList;
+                    self.status_message = Some("Entry successfully deleted!".to_string());
                 }
                 Ok(Response::Error(e)) => {
                     let debug_info = format!("Delete Error: {}\nID:{}", e, uuid);
@@ -293,9 +300,9 @@ impl App {
                 password: Some(password),
             }) {
                 Ok(Response::Ok(_)) => {
-                    // Atualização com sucesso! Recarrega a lista e limpa a tela.
                     self.load_entries();
                     self.state = AppState::EntriesList;
+                    self.status_message = Some("Entry successfully edited!".to_string());
                     self.reset_form();
                 }
                 Ok(Response::Error(e)) => {
@@ -307,6 +314,27 @@ impl App {
                     let _ = std::fs::write("blackout_debug.txt", debug_info);
                 }
                 Err(_) => {}
+            }
+        }
+    }
+
+    pub fn copy_to_clipboard(&mut self, text: String) {
+        let child = Command::new("wl-copy")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+
+        match child {
+            Ok(mut process) => {
+                if let Some(mut stdin) = process.stdin.take() {
+                    let _ = stdin.write_all(text.as_bytes());
+                }
+                self.status_message = Some("Password copied to clipboard!".to_string());
+            }
+            Err(e) => {
+                let _ = std::fs::write("blackout_debug.txt", format!("Erro wl-copy: {}", e));
+                self.status_message = Some("Failed to copy (missing wl-copy)".to_string());
             }
         }
     }

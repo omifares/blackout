@@ -13,11 +13,12 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         Constraint::Length(1),
         Constraint::Fill(1),
         Constraint::Length(1),
+        Constraint::Length(1),
     ])
     .spacing(1)
     .horizontal_margin(3)
     .vertical_margin(1);
-    let [top, main, bottom] = frame.area().layout(&vertical);
+    let [top, main, status_area, bottom] = frame.area().layout(&vertical);
 
     let title = Line::from_iter([Span::from("Blackout").bold()]);
     frame.render_widget(title.centered(), top);
@@ -42,7 +43,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 .dim()
         }
         AppState::ViewEntry => {
-            Line::from("(Esc) Back | (x) Lock | (e) Edit | (⌫) Delete | (↵) Copy password (not implemented)")
+            Line::from("(Esc) Back | (x) Lock | (e) Edit | (⌫) Delete | (↵) Copy password")
                 .dim()
         }
         AppState::UpdateEntry => {
@@ -50,6 +51,17 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 .dim()
         }
     };
+
+    let status = match app.state {
+        AppState::InitialCheck => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
+        AppState::UnlockPrompt => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
+        AppState::EntriesList => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
+        AppState::NewEntryForm => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
+        AppState::ViewEntry => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
+        AppState::UpdateEntry => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
+    };
+
+    frame.render_widget(status.centered(), status_area);
     frame.render_widget(helper.centered(), bottom);
 }
 

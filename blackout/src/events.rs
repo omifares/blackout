@@ -1,4 +1,4 @@
-use crate::app::{App, AppState};
+use crate::app::{App, AppState, EntryView};
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub fn handle_event(app: &mut App, key: KeyEvent) {
@@ -93,8 +93,9 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                     app.state = AppState::EntriesList;
                 }
                 KeyCode::Enter => {
-                    // TODO: copy password to clipboard
-                    // app.copy_field_to_clipboard();
+                    if let Some(entry) = &app.detail_entry {
+                        app.copy_to_clipboard(entry.secret().to_string());
+                    }
                 }
                 KeyCode::Char('e') => {
                     app.reset_form();

@@ -1,2 +1,2 @@
-Add Entry Error: Vault is locked. Please unlock it first.
-Data:microsoft.net,scorpions,trash
+Delete Error: Vault is locked. Please unlock it first.
+ID:019d7ff4-305e-7f61-85f6-8bf4af8a339f
