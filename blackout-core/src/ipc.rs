@@ -10,7 +10,7 @@ pub enum Request {
     },
     AddEntry {
         service: String,
-        user: String,
+        username: String,
         password: String,
     },
     ListEntries,
@@ -23,6 +23,12 @@ pub enum Request {
     DeleteEntry {
         uuid: uuid::Uuid,
     },
+    UpdateEntry {
+        uuid: uuid::Uuid,
+        service: Option<String>,
+        username: Option<String>,
+        password: Option<String>,
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]

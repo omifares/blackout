@@ -1,4 +1,4 @@
-use crate::app::{App, AppState};
+use crate::app::{App, AppState, EntryView};
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub fn handle_event(app: &mut App, key: KeyEvent) {
@@ -37,6 +37,11 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 KeyCode::Char('n') => {
                     app.state = AppState::NewEntryForm;
                 }
+                KeyCode::Char('e') => {
+                    app.reset_form();
+                    app.start_editing_entry();
+                    app.state = AppState::UpdateEntry;
+                }
                 KeyCode::Up => {
                     app.prev_entry();
                 }
@@ -44,7 +49,7 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                     app.next_entry();
                 }
                 KeyCode::Backspace => {
-                    app.delete_selected_entry();
+                    app.state = AppState::ConfirmEntryDelete;
                 }
                 KeyCode::Enter => {
                     app.view_selected_entry();
@@ -84,12 +89,17 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                     app.lock_vault();
                 }
                 KeyCode::Backspace => {
-                    app.delete_selected_entry();
-                    app.state = AppState::EntriesList;
+                    app.state = AppState::ConfirmEntryDelete;
                 }
                 KeyCode::Enter => {
-                    // TODO: copy password to clipboard
-                    // app.copy_field_to_clipboard();
+                    if let Some(entry) = &app.detail_entry {
+                        app.copy_to_clipboard(entry.secret().to_string());
+                    }
+                }
+                KeyCode::Char('e') => {
+                    app.reset_form();
+                    app.start_editing_entry();
+                    app.state = AppState::UpdateEntry;
                 }
                 KeyCode::Esc => {
                     app.state = AppState::EntriesList;
@@ -97,5 +107,44 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 _ => {}
             }
         }
+
+        AppState::UpdateEntry => match key.code {
+            KeyCode::Tab => {
+                app.current_field = (app.current_field + 1) % 3;
+            }
+            KeyCode::BackTab => {
+                if app.current_field == 0 {
+                    app.current_field = 2;
+                } else {
+                    app.current_field -= 1;
+                }
+            }
+            KeyCode::Char(c) => {
+                app.form_fields[app.current_field].push(c);
+            }
+            KeyCode::Backspace => {
+                app.form_fields[app.current_field].pop();
+            }
+            KeyCode::Enter => {
+                app.submit_entry_update();
+            }
+            KeyCode::Esc => {
+                app.reset_form();
+                app.state = AppState::EntriesList;
+            }
+            _ => {}
+        },
+
+        AppState::ConfirmEntryDelete => match key.code {
+            KeyCode::Char('y') | KeyCode::Enter => {
+                app.delete_selected_entry();
+                app.state = AppState::EntriesList;
+            }
+            KeyCode::Char('n') | KeyCode::Esc => {
+                app.state = AppState::EntriesList; 
+            }
+            _ => {}
+        }
+
     }
 }

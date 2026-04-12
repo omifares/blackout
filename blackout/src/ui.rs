@@ -2,7 +2,7 @@ use ratatui::widgets::{Block, Cell, Paragraph, Row, Table};
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    style::{Color, Style, Stylize},
+    style::{Style, Stylize},
     text::{Line, Span},
 };
 
@@ -13,11 +13,12 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         Constraint::Length(1),
         Constraint::Fill(1),
         Constraint::Length(1),
+        Constraint::Length(1),
     ])
     .spacing(1)
     .horizontal_margin(3)
     .vertical_margin(1);
-    let [top, main, bottom] = frame.area().layout(&vertical);
+    let [top, main, status_area, bottom] = frame.area().layout(&vertical);
 
     let title = Line::from_iter([Span::from("Blackout").bold()]);
     frame.render_widget(title.centered(), top);
@@ -28,6 +29,8 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         AppState::EntriesList => render_entries_list(frame, main, app),
         AppState::NewEntryForm => render_new_entry_form(frame, main, app),
         AppState::ViewEntry => render_view_entry(frame, main, app),
+        AppState::UpdateEntry => render_edit_entry_form(frame, main, app),
+        AppState::ConfirmEntryDelete => render_delete_confirmation(frame, main),
     }
 
     let helper = match app.state {
@@ -41,10 +44,30 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 .dim()
         }
         AppState::ViewEntry => {
-            Line::from("(Esc) Back | (x) Lock | (⌫) Delete | (↵) Copy password (not implemented)")
+            Line::from("(Esc) Back | (x) Lock | (e) Edit | (⌫) Delete | (↵) Copy password")
+                .dim()
+        }
+        AppState::UpdateEntry => {
+            Line::from("(Tab) Next field | (BackTab) Prev field | (Enter) Submit | (Esc) Cancel")
+                .dim()
+        }
+        AppState::ConfirmEntryDelete => {
+            Line::from("(Esc) Cancel | (↵) Confirm ")
                 .dim()
         }
     };
+
+    let status = match app.state {
+        AppState::InitialCheck => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
+        AppState::UnlockPrompt => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
+        AppState::EntriesList => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
+        AppState::NewEntryForm => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
+        AppState::ViewEntry => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
+        AppState::UpdateEntry => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
+        AppState::ConfirmEntryDelete => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
+    };
+
+    frame.render_widget(status.centered(), status_area);
     frame.render_widget(helper.centered(), bottom);
 }
 
@@ -108,7 +131,7 @@ fn render_entries_list(frame: &mut Frame, area: Rect, app: &mut App) {
 fn render_new_entry_form(frame: &mut Frame, area: Rect, app: &App) {
     let vertical = Layout::vertical([Constraint::Percentage(20), Constraint::Percentage(80)]);
     let [title_area, form_area] = area
-        .centered(Constraint::Percentage(50), Constraint::Percentage(50))
+        .centered(Constraint::Percentage(50), Constraint::Percentage(60))
         .layout(&vertical);
 
     let title = Paragraph::new("New entry").centered();
@@ -123,6 +146,11 @@ fn render_new_entry_form(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_view_entry(frame: &mut Frame, area: Rect, app: &App) {
+    let vertical = Layout::vertical([Constraint::Percentage(20), Constraint::Percentage(80)]);
+    let [title_area, table_area] = area
+        .centered(Constraint::Percentage(80), Constraint::Percentage(60))
+        .layout(&vertical);
+
     if app.detail_entry.is_none() {
         let debug_info = "View Entry Error: No entry details available".to_string();
         let _ = std::fs::write("blackout_debug.txt", debug_info);
@@ -148,15 +176,56 @@ fn render_view_entry(frame: &mut Frame, area: Rect, app: &App) {
         ]),
     ];
 
-    // highlight selected row
     let rows: Vec<Row> = rows
         .into_iter()
         .map(|row| row.style(Style::new().bold()))
         .collect();
 
-    let table = Table::new(rows, [Constraint::Percentage(50)])
-        .column_spacing(2)
-        .widths([Constraint::Length(15), Constraint::Fill(1)]);
+    let table = Table::new(
+        rows, 
+        [
+            Constraint::Length(20),
+            Constraint::Fill(1),
+        ]
+    )
+    .column_spacing(2);
 
-    frame.render_widget(table, area);
+    let title = Paragraph::new(app.detail_entry.as_ref().unwrap()._id().to_string()).centered();
+    
+    frame.render_widget(title, title_area);
+    frame.render_widget(table, table_area);
+}
+
+fn render_edit_entry_form(frame: &mut Frame, area: Rect, app: &App) {
+    let vertical = Layout::vertical([Constraint::Percentage(20), Constraint::Percentage(80)]);
+    let [title_area, form_area] = area
+        .centered(Constraint::Percentage(50), Constraint::Percentage(60))
+        .layout(&vertical);
+
+    let title = Paragraph::new("Edit entry").centered();
+    let text = format!(
+        "Service: {}\nUser: {}\nPassword: {}",
+        app.form_fields[0], app.form_fields[1], app.form_fields[2]
+    );
+    let form = Paragraph::new(text);
+
+    frame.render_widget(title, title_area);
+    frame.render_widget(form, form_area);
+}
+
+fn render_delete_confirmation(frame: &mut Frame, area: Rect) {
+    let vertical = Layout::vertical([Constraint::Percentage(50)]);
+    let [confirm_area] = area
+        .centered(Constraint::Percentage(50), Constraint::Percentage(60))
+        .layout(&vertical);
+
+    let text = vec![
+        Line::from("Are you sure you want to delete this entry?").centered(),
+        Line::from(""),
+        Line::from(" [y]es  |  [n]o ").centered().bold(),
+    ];
+
+    let paragraph = Paragraph::new(text).centered();
+
+    frame.render_widget(paragraph, confirm_area);
 }

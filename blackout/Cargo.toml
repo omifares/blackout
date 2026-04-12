@@ -1,6 +1,6 @@
 [package]
 name = "blackout"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 
 [dependencies]
@@ -10,6 +10,6 @@ crossterm = "0.29.0"
 ratatui = "0.30.0"
 serde_json = "1.0.149"
 serde = { version = "1.0", features = ["derive"] }
-use = "0.0.1-pre.0"
 uuid = "1.23.0"
 chrono = "0.4.44"
+arboard = "3.6.1"

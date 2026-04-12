@@ -25,13 +25,19 @@ pub async fn process_request(
         Request::Unlock { master_password } => handle_unlock(master_password, state, storage).await,
         Request::AddEntry {
             service,
-            user,
+            username,
             password,
-        } => handle_add_entry(service, user, password, state, storage).await,
+        } => handle_add_entry(service, username, password, state, storage).await,
         Request::ListEntries => handle_list_entries(state).await,
         Request::GetEntry { service } => handle_get_entry(service, state).await,
         Request::GetEntryById { uuid } => handle_get_entry_by_id(uuid, state).await,
         Request::DeleteEntry { uuid } => handle_delete_entry(uuid, state, storage).await,
+        Request::UpdateEntry {
+            uuid,
+            service,
+            username,
+            password,
+        } => handle_update_entry(uuid, service, username, password, state, storage).await,
     }
 }
 
@@ -86,7 +92,7 @@ async fn handle_add_entry(
     state: Arc<RwLock<DaemonState>>,
     storage: Arc<Wallet>,
 ) -> Response {
-    let mut st = state.write().await;
+    let mut st: tokio::sync::RwLockWriteGuard<'_, DaemonState> = state.write().await;
     if !st.authenticated {
         debug!("Vault is locked. Please unlock it first.");
         return Response::Error("Vault is locked. Please unlock it first.".into());
@@ -223,6 +229,36 @@ async fn handle_delete_entry(
                 Response::Error("Invalid UUID format".into())
             }
         }
+    } else {
+        debug!("Vault is not loaded.");
+        Response::Error("Vault is not loaded.".into())
+    }
+}
+
+async fn handle_update_entry(
+    uuid: uuid::Uuid,
+    service: Option<String>,
+    user: Option<String>,
+    pass: Option<String>,
+    state: Arc<RwLock<DaemonState>>,
+    storage: Arc<Wallet>,
+) -> Response {
+    let mut st: tokio::sync::RwLockWriteGuard<'_, DaemonState> = state.write().await;
+    if !st.authenticated {
+        debug!("Vault is locked. Please unlock it first.");
+        return Response::Error("Vault is locked. Please unlock it first.".into());
+    }
+
+    let password = st.master_password.clone();
+    if let Some(vault) = &mut st.vault {
+        vault.update_entry(uuid, service, user, pass);
+        if let Some(p) = password.as_ref()
+            && let Err(e) = storage.encrypt_and_save_vault(vault, p)
+        {
+            debug!("Failed to save vault: {}", e);
+            return Response::Error(format!("Failed to save vault: {}", e));
+        }
+        Response::Ok("Entry updated successfully".into())
     } else {
         debug!("Vault is not loaded.");
         Response::Error("Vault is not loaded.".into())
