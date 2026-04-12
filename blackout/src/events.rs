@@ -49,7 +49,7 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                     app.next_entry();
                 }
                 KeyCode::Backspace => {
-                    app.delete_selected_entry();
+                    app.state = AppState::ConfirmEntryDelete;
                 }
                 KeyCode::Enter => {
                     app.view_selected_entry();
@@ -89,8 +89,7 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                     app.lock_vault();
                 }
                 KeyCode::Backspace => {
-                    app.delete_selected_entry();
-                    app.state = AppState::EntriesList;
+                    app.state = AppState::ConfirmEntryDelete;
                 }
                 KeyCode::Enter => {
                     if let Some(entry) = &app.detail_entry {
@@ -135,5 +134,17 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
             }
             _ => {}
         },
+
+        AppState::ConfirmEntryDelete => match key.code {
+            KeyCode::Char('y') | KeyCode::Enter => {
+                app.delete_selected_entry();
+                app.state = AppState::EntriesList;
+            }
+            KeyCode::Char('n') | KeyCode::Esc => {
+                app.state = AppState::EntriesList; 
+            }
+            _ => {}
+        }
+
     }
 }

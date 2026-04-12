@@ -66,6 +66,7 @@ pub enum AppState {
     NewEntryForm,
     ViewEntry,
     UpdateEntry,
+    ConfirmEntryDelete,
 }
 
 pub struct App {

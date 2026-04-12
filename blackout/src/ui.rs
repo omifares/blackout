@@ -30,6 +30,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         AppState::NewEntryForm => render_new_entry_form(frame, main, app),
         AppState::ViewEntry => render_view_entry(frame, main, app),
         AppState::UpdateEntry => render_edit_entry_form(frame, main, app),
+        AppState::ConfirmEntryDelete => render_delete_confirmation(frame, main),
     }
 
     let helper = match app.state {
@@ -50,6 +51,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             Line::from("(Tab) Next field | (BackTab) Prev field | (Enter) Submit | (Esc) Cancel")
                 .dim()
         }
+        AppState::ConfirmEntryDelete => {
+            Line::from("(Esc) Cancel | (↵) Confirm ")
+                .dim()
+        }
     };
 
     let status = match app.state {
@@ -59,6 +64,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         AppState::NewEntryForm => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
         AppState::ViewEntry => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
         AppState::UpdateEntry => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
+        AppState::ConfirmEntryDelete => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
     };
 
     frame.render_widget(status.centered(), status_area);
@@ -205,4 +211,21 @@ fn render_edit_entry_form(frame: &mut Frame, area: Rect, app: &App) {
 
     frame.render_widget(title, title_area);
     frame.render_widget(form, form_area);
+}
+
+fn render_delete_confirmation(frame: &mut Frame, area: Rect) {
+    let vertical = Layout::vertical([Constraint::Percentage(50)]);
+    let [confirm_area] = area
+        .centered(Constraint::Percentage(50), Constraint::Percentage(60))
+        .layout(&vertical);
+
+    let text = vec![
+        Line::from("Are you sure you want to delete this entry?").centered(),
+        Line::from(""),
+        Line::from(" [y]es  |  [n]o ").centered().bold(),
+    ];
+
+    let paragraph = Paragraph::new(text).centered();
+
+    frame.render_widget(paragraph, confirm_area);
 }
