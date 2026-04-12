@@ -37,6 +37,11 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 KeyCode::Char('n') => {
                     app.state = AppState::NewEntryForm;
                 }
+                KeyCode::Char('e') => {
+                    app.reset_form();
+                    app.start_editing_entry();
+                    app.state = AppState::UpdateEntry;
+                }
                 KeyCode::Up => {
                     app.prev_entry();
                 }
@@ -91,11 +96,43 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                     // TODO: copy password to clipboard
                     // app.copy_field_to_clipboard();
                 }
+                KeyCode::Char('e') => {
+                    app.reset_form();
+                    app.start_editing_entry();
+                    app.state = AppState::UpdateEntry;
+                }
                 KeyCode::Esc => {
                     app.state = AppState::EntriesList;
                 }
                 _ => {}
             }
         }
+
+        AppState::UpdateEntry => match key.code {
+            KeyCode::Tab => {
+                app.current_field = (app.current_field + 1) % 3;
+            }
+            KeyCode::BackTab => {
+                if app.current_field == 0 {
+                    app.current_field = 2;
+                } else {
+                    app.current_field -= 1;
+                }
+            }
+            KeyCode::Char(c) => {
+                app.form_fields[app.current_field].push(c);
+            }
+            KeyCode::Backspace => {
+                app.form_fields[app.current_field].pop();
+            }
+            KeyCode::Enter => {
+                app.submit_entry_update();
+            }
+            KeyCode::Esc => {
+                app.reset_form();
+                app.state = AppState::EntriesList;
+            }
+            _ => {}
+        },
     }
 }

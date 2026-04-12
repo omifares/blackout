@@ -62,6 +62,7 @@ pub enum AppState {
     EntriesList,
     NewEntryForm,
     ViewEntry,
+    UpdateEntry,
 }
 
 pub struct App {
@@ -191,7 +192,7 @@ impl App {
         if !service.is_empty() && !user.is_empty() && !password.is_empty() {
             match crate::send_command(Request::AddEntry {
                 service: service.clone(),
-                user: user.clone(),
+                username: user.clone(),
                 password: password.clone(),
             }) {
                 Ok(Response::Ok(_)) => {
@@ -249,6 +250,63 @@ impl App {
                     uuid
                 );
                 let _ = std::fs::write("blackout_debug.txt", debug_info);
+            }
+        }
+    }
+
+    pub fn start_editing_entry(&mut self) {
+        if let Some(entry) = self.get_selected_entry() {
+            let uuid = entry.id;
+
+            if let Ok(Response::Ok(data)) = crate::send_command(Request::GetEntryById { uuid }) {
+                if let Ok(entry) = serde_json::from_str::<Entry>(&data) {
+                    let detail_entry = DetailEntryView(entry);
+
+                    self.form_fields[0] = detail_entry.service().to_string();
+                    self.form_fields[1] = detail_entry.username().to_string();
+                    self.form_fields[2] = detail_entry.secret().to_string();
+
+                    self.state = AppState::UpdateEntry;
+                }
+            } else {
+                let debug_info = format!(
+                    "View Entry Error: Failed to get entry details for ID: {}",
+                    uuid
+                );
+                let _ = std::fs::write("blackout_debug.txt", debug_info);
+            }
+        }
+    }
+
+    pub fn submit_entry_update(&mut self) {
+        if let Some(entry) = self.get_selected_entry() {
+            let uuid = entry.id;
+
+            let service = self.form_fields[0].clone();
+            let username = self.form_fields[1].clone();
+            let password = self.form_fields[2].clone();
+
+            match crate::send_command(Request::UpdateEntry {
+                uuid,
+                service: Some(service),
+                username: Some(username),
+                password: Some(password),
+            }) {
+                Ok(Response::Ok(_)) => {
+                    // Atualização com sucesso! Recarrega a lista e limpa a tela.
+                    self.load_entries();
+                    self.state = AppState::EntriesList;
+                    self.reset_form();
+                }
+                Ok(Response::Error(e)) => {
+                    let debug_info = format!(
+                        "Update Entry Error: {}\nData:{}",
+                        e,
+                        self.form_fields.join(",")
+                    );
+                    let _ = std::fs::write("blackout_debug.txt", debug_info);
+                }
+                Err(_) => {}
             }
         }
     }
