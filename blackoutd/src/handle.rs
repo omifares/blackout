@@ -5,11 +5,41 @@ use tokio::sync::RwLock;
 use tracing::debug;
 use uuid::Uuid;
 
-use blackout_core::ipc::{Request, Response};
+use blackout_core::ipc::{EntryInput, EntryUpdateInput, Request, Response};
 use blackout_core::storage::Wallet;
 use blackout_core::vault::Vault;
 
 use crate::daemon::DaemonState;
+
+// Helpers
+
+// Context structs
+pub struct Context {
+    pub state: Arc<RwLock<DaemonState>>,
+    pub storage: Arc<Wallet>,
+}
+
+impl Context {
+    pub fn new(state: Arc<RwLock<DaemonState>>, storage: Arc<Wallet>) -> Self {
+        Self { state, storage }
+    }
+}
+
+// Auth check
+fn needs_auth(req: &Request) -> bool {
+    // Except Ping and Unlock
+    !matches!(req, Request::Ping | Request::Unlock { .. } | Request::Lock)
+}
+
+// vault mutation
+fn is_mutation(req: &Request) -> bool {
+    matches!(
+        req,
+        Request::AddEntry { .. } | 
+        Request::UpdateEntry { .. } | 
+        Request::DeleteEntry { .. }
+    )
+}
 
 pub async fn process_request(
     req: Request,
@@ -19,33 +49,63 @@ pub async fn process_request(
     // Update activity timestamp on every request
     crate::daemon::Daemon::update_activity(&state);
 
+    // Creating context
+    let ctx = Context::new(state, storage);
+
+    // Auth check
+    if needs_auth(&req) {
+        let st = ctx.state.read().await;
+        if !st.authenticated {
+            debug!("Access denied: Vault is locked.");
+            return Response::Error("Vault is locked".into());
+        }
+    }
+
+    if is_mutation(&req) {
+        let mut st = ctx.state.write().await;
+        
+        if !st.authenticated {
+            debug!("Vault is locked. Please unlock it first.");
+            return Response::Error("Vault is locked".into());
+        }        
+
+        // Create snapshot
+
+        let password = match st.master_password.clone() {
+            Some(p) => p,
+            None => return Response::Error("No password in memory".into()),
+        };
+
+        if let Some(vault) = &mut st.vault {
+            match ctx.storage.create_backup_file(&vault.entries, vault.version, &password) {
+                Ok(meta) => {
+                    vault.history.push(meta);
+                },
+                Err(e) => return Response::Error(format!("Snapshot failed: {}", e)),
+            }
+        }
+    }
+
     match req {
         Request::Ping => Response::Ok("Pong!".into()),
-        Request::Lock => handle_lock(state).await,
-        Request::Unlock { master_password } => handle_unlock(master_password, state, storage).await,
-        Request::AddEntry {
-            service,
-            username,
-            password,
-        } => handle_add_entry(service, username, password, state, storage).await,
-        Request::ListEntries => handle_list_entries(state).await,
-        Request::GetEntry { service } => handle_get_entry(service, state).await,
-        Request::GetEntryById { uuid } => handle_get_entry_by_id(uuid, state).await,
-        Request::DeleteEntry { uuid } => handle_delete_entry(uuid, state, storage).await,
-        Request::UpdateEntry {
-            uuid,
-            service,
-            username,
-            password,
-        } => handle_update_entry(uuid, service, username, password, state, storage).await,
+        Request::Lock => handle_lock(ctx.state).await,
+        Request::Unlock { master_password } => handle_unlock(ctx, master_password).await,
+        Request::AddEntry { entry_ctx } => handle_add_entry(ctx, entry_ctx).await,
+        Request::ListEntries => handle_list_entries(ctx.state).await,
+        Request::GetEntry { service } => handle_get_entry(service, ctx.state).await,
+        Request::GetEntryById { uuid } => handle_get_entry_by_id(uuid, ctx.state).await,
+        Request::DeleteEntry { uuid } => handle_delete_entry(ctx, uuid).await,
+        Request::UpdateEntry { entry_ctx } => handle_update_entry(ctx, entry_ctx).await,
     }
 }
 
 async fn handle_unlock(
+    ctx: Context,
     password: String,
-    state: Arc<RwLock<DaemonState>>,
-    storage: Arc<Wallet>,
 ) -> Response {
+    let storage = ctx.storage;
+    let state = ctx.state;
+
     if !storage.exists() {
         debug!("Vault file not found, creating a new encrypted vault...");
         let new_vault = Vault::default();
@@ -86,41 +146,26 @@ async fn handle_lock(state: Arc<RwLock<DaemonState>>) -> Response {
 }
 
 async fn handle_add_entry(
-    service: String,
-    user: String,
-    pass: String,
-    state: Arc<RwLock<DaemonState>>,
-    storage: Arc<Wallet>,
+    ctx: Context,
+    entry_ctx: EntryInput,
 ) -> Response {
-    let mut st: tokio::sync::RwLockWriteGuard<'_, DaemonState> = state.write().await;
-    if !st.authenticated {
-        debug!("Vault is locked. Please unlock it first.");
-        return Response::Error("Vault is locked. Please unlock it first.".into());
-    }
+    let mut st = ctx.state.write().await;
+    let password = st.master_password.clone().unwrap();
 
-    let password = st.master_password.clone();
     if let Some(vault) = &mut st.vault {
-        vault.add_entry(service, user, pass);
-        // Save after adding
-        if let Some(p) = password.as_ref()
-            && let Err(e) = storage.encrypt_and_save_vault(vault, p)
-        {
-            debug!("Failed to save vault: {}", e);
-            return Response::Error(format!("Failed to save vault: {}", e));
+        vault.add_entry(entry_ctx.service, entry_ctx.username, entry_ctx.password);
+        
+        if let Err(e) = ctx.storage.encrypt_and_save_vault(vault, &password) {
+            return Response::Error(format!("Save failed: {}", e));
         }
-        Response::Ok("Entry added successfully".into())
+        Response::Ok("Entry added".into())
     } else {
-        debug!("Vault is not loaded.");
-        Response::Error("Vault is not loaded.".into())
+        Response::Error("Vault not loaded".into())
     }
 }
 
 async fn handle_list_entries(state: Arc<RwLock<DaemonState>>) -> Response {
     let st = state.read().await;
-    if !st.authenticated {
-        debug!("Vault is locked. Please unlock it first.");
-        return Response::Error("Vault is locked. Please unlock it first.".into());
-    }
 
     if let Some(vault) = &st.vault {
         let entries: Vec<serde_json::Value> = vault
@@ -144,10 +189,6 @@ async fn handle_list_entries(state: Arc<RwLock<DaemonState>>) -> Response {
 
 async fn handle_get_entry(service: String, state: Arc<RwLock<DaemonState>>) -> Response {
     let st = state.read().await;
-    if !st.authenticated {
-        debug!("Vault is locked. Please unlock it first.");
-        return Response::Error("Vault is locked. Please unlock it first.".into());
-    }
 
     if let Some(vault) = &st.vault {
         let entries: Vec<String> = vault
@@ -169,10 +210,6 @@ async fn handle_get_entry(service: String, state: Arc<RwLock<DaemonState>>) -> R
 
 async fn handle_get_entry_by_id(uuid: Uuid, state: Arc<RwLock<DaemonState>>) -> Response {
     let st = state.read().await;
-    if !st.authenticated {
-        debug!("Vault is locked. Please unlock it first.");
-        return Response::Error("Vault is locked. Please unlock it first.".into());
-    }
 
     if let Some(vault) = &st.vault {
         match uuid.to_string().parse::<Uuid>() {
@@ -196,15 +233,10 @@ async fn handle_get_entry_by_id(uuid: Uuid, state: Arc<RwLock<DaemonState>>) -> 
 }
 
 async fn handle_delete_entry(
+    ctx: Context,
     uuid: uuid::Uuid,
-    state: Arc<RwLock<DaemonState>>,
-    storage: Arc<Wallet>,
 ) -> Response {
-    let mut st = state.write().await;
-    if !st.authenticated {
-        debug!("Vault is locked. Please unlock it first.");
-        return Response::Error("Vault is locked. Please unlock it first.".into());
-    }
+    let mut st = ctx.state.write().await;
 
     let password = st.master_password.clone();
     if let Some(vault) = &mut st.vault {
@@ -213,7 +245,7 @@ async fn handle_delete_entry(
                 if vault.remove_entry(id) {
                     // Save after deletion
                     if let Some(p) = password.as_ref()
-                        && let Err(e) = storage.encrypt_and_save_vault(vault, p)
+                        && let Err(e) = ctx.storage.encrypt_and_save_vault(vault, p)
                     {
                         debug!("Failed to save vault: {}", e);
                         return Response::Error(format!("Failed to save vault: {}", e));
@@ -236,24 +268,16 @@ async fn handle_delete_entry(
 }
 
 async fn handle_update_entry(
-    uuid: uuid::Uuid,
-    service: Option<String>,
-    user: Option<String>,
-    pass: Option<String>,
-    state: Arc<RwLock<DaemonState>>,
-    storage: Arc<Wallet>,
+    ctx: Context,
+    entry_ctx: EntryUpdateInput,
 ) -> Response {
-    let mut st: tokio::sync::RwLockWriteGuard<'_, DaemonState> = state.write().await;
-    if !st.authenticated {
-        debug!("Vault is locked. Please unlock it first.");
-        return Response::Error("Vault is locked. Please unlock it first.".into());
-    }
+    let mut st: tokio::sync::RwLockWriteGuard<'_, DaemonState> = ctx.state.write().await;
 
     let password = st.master_password.clone();
     if let Some(vault) = &mut st.vault {
-        vault.update_entry(uuid, service, user, pass);
+        vault.update_entry(entry_ctx.uuid, entry_ctx.service, entry_ctx.username, entry_ctx.password);
         if let Some(p) = password.as_ref()
-            && let Err(e) = storage.encrypt_and_save_vault(vault, p)
+            && let Err(e) = ctx.storage.encrypt_and_save_vault(vault, p)
         {
             debug!("Failed to save vault: {}", e);
             return Response::Error(format!("Failed to save vault: {}", e));

@@ -1,4 +1,4 @@
-use blackout_core::ipc::{Request, Response};
+use blackout_core::ipc::{EntryInput, EntryUpdateInput, Request, Response};
 use blackout_core::vault::Entry;
 
 use chrono::{DateTime, Local};
@@ -91,33 +91,33 @@ impl App {
     }
 
     pub fn check_vault_status(&mut self) {
-        if matches!(self.state, AppState::UnlockPrompt) {
+        if matches!(
+            self.state,
+            AppState::UnlockPrompt | AppState::UpdateEntry | AppState::NewEntryForm
+        ) {
             return;
         }
 
         match crate::send_command(Request::ListEntries) {
             Ok(response) => match response {
                 Response::Ok(data) => {
-                    self.vault_unlocked = true;
-
-                    if matches!(
-                        self.state,
-                        self::AppState::InitialCheck | self::AppState::UnlockPrompt
-                    ) {
+                    if self.state == AppState::InitialCheck || self.state == AppState::VaultLocked {
                         self.parse_entries(&data);
                         self.state = AppState::EntriesList;
+                        self.vault_unlocked = true;
                     }
                 }
-                Response::Error(err) => {
-                    if err.contains("Vault is locked") {
-                        self.lock_application();
-                    } else {
+                Response::Error(err) if err.contains("Vault is locked") => {
+                    if self.state != AppState::VaultLocked {
                         self.lock_application();
                     }
                 }
+                _ => {}
             },
             Err(_) => {
-                self.lock_application();
+                if self.state != AppState::VaultLocked {
+                    self.lock_application();
+                }
             }
         }
     }
@@ -134,9 +134,11 @@ impl App {
         match serde_json::from_str::<Vec<Entry>>(data) {
             Ok(entries) => {
                 self.entries = entries;
-                self.table_state.select(Some(0));
+                if self.table_state.selected().is_none() && !self.entries.is_empty() {
+                    self.table_state.select(Some(0));
+                }
             }
-            Err(e) => {
+            Err(e) => { 
                 let debug_info = format!("Parser Error: {}\n\nReceived Data:\n{}", e, data);
                 let _ = std::fs::write("blackout_debug.txt", debug_info);
             }
@@ -195,12 +197,15 @@ impl App {
         let service = &self.form_fields[0];
         let user = &self.form_fields[1];
         let password = &self.form_fields[2];
+
+        let entry_ctx = EntryInput {
+            service: service.clone(),
+            username: user.clone(),
+            password: password.clone(),
+        };
+
         if !service.is_empty() && !user.is_empty() && !password.is_empty() {
-            match crate::send_command(Request::AddEntry {
-                service: service.clone(),
-                username: user.clone(),
-                password: password.clone(),
-            }) {
+            match crate::send_command(Request::AddEntry { entry_ctx }) {
                 Ok(Response::Ok(_)) => {
                     self.load_entries();
                     self.state = AppState::EntriesList;
@@ -304,12 +309,14 @@ impl App {
             let username = self.form_fields[1].clone();
             let password = self.form_fields[2].clone();
 
-            match crate::send_command(Request::UpdateEntry {
-                uuid,
-                service: Some(service),
-                username: Some(username),
-                password: Some(password),
-            }) {
+            let entry_ctx = EntryUpdateInput {
+                uuid: uuid,
+                service: Some(service.clone()),
+                username: Some(username.clone()),
+                password: Some(password.clone()),
+            };
+
+            match crate::send_command(Request::UpdateEntry { entry_ctx }) {
                 Ok(Response::Ok(_)) => {
                     self.load_entries();
                     self.state = AppState::EntriesList;
