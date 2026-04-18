@@ -1,7 +1,10 @@
-use crate::app::{App, AppState, EntryView};
+use std::time::Instant;
+
+use crate::app::{App, AppState};
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub fn handle_event(app: &mut App, key: KeyEvent) {
+    app.last_interaction = Instant::now();
     match app.state {
         AppState::InitialCheck => {
             if key.code == KeyCode::Esc {
@@ -24,6 +27,17 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                     app.input_buffer.clear();
                 }
                 _ => {}
+            }
+        }
+        AppState::VaultLocked => {
+            match key.code {
+                KeyCode::Esc => {
+                    // Quit
+                }
+                _ => {
+                    app.input_buffer.clear();
+                    app.state = AppState::UnlockPrompt;
+                }
             }
         }
         AppState::EntriesList => {

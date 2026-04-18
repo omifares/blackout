@@ -7,6 +7,7 @@ use crossterm::event::{self, Event, KeyCode};
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
+use std::time::Duration;
 
 use color_eyre::Result;
 use ratatui::DefaultTerminal;
@@ -39,20 +40,31 @@ pub fn send_command(req: Request) -> Result<Response> {
 fn run(mut terminal: DefaultTerminal, app: &mut app::App) -> Result<()> {
     loop {
         terminal.draw(|frame| ui::render(frame, app))?;
-        if let Event::Key(key) = event::read()? {
-            // Global quit handling only in InitialCheck | UnlockPrompt | EntriesList states
-            if key.code == KeyCode::Esc
-                && matches!(
-                    app.state,
-                    app::AppState::InitialCheck
-                        | app::AppState::UnlockPrompt
-                        | app::AppState::EntriesList
-                )
-                && key.code == KeyCode::Esc
-            {
-                break;
+
+        // Pulling
+        if event::poll(Duration::from_millis(100))? {
+            if let Event::Key(key) = event::read()? {
+                if key.code == KeyCode::Esc // Handling ESC to exit
+                    && matches!(
+                        app.state,
+                        app::AppState::InitialCheck
+                            | app::AppState::UnlockPrompt
+                            | app::AppState::EntriesList
+                            | app::AppState::VaultLocked
+                    )
+                {
+                    break;
+                }
+
+                events::handle_event(app, key);
             }
-            events::handle_event(app, key);
+        }
+
+        // Check vault status silently after 30s
+        if app.last_interaction.elapsed() < Duration::from_secs(30) {
+            app.check_vault_status();
+        } else { // > 30s auto-lock vault
+            app.lock_application();
         }
     }
     Ok(())

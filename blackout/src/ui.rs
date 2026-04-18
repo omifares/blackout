@@ -23,9 +23,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     let title = Line::from_iter([Span::from("Blackout").bold()]);
     frame.render_widget(title.centered(), top);
 
-    match app.state {
+    match &app.state {
         AppState::InitialCheck => render_initial_check(frame, main),
         AppState::UnlockPrompt => render_unlock_prompt(frame, main, &app.input_buffer),
+        AppState::VaultLocked => render_locked_vault(frame, main),
         AppState::EntriesList => render_entries_list(frame, main, app),
         AppState::NewEntryForm => render_new_entry_form(frame, main, app),
         AppState::ViewEntry(view) => render_view_entry(frame, main, app, &view),
@@ -33,9 +34,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         AppState::ConfirmEntryDelete => render_delete_confirmation(frame, main),
     }
 
-    let helper = match app.state {
+    let helper = match &app.state {
         AppState::InitialCheck => Line::from("(Esc) Quit").dim(),
         AppState::UnlockPrompt => Line::from("(Enter) Submit | (Esc) Quit").dim(),
+        AppState::VaultLocked => Line::from("(Esc) Quit | (any) Unlock vault").dim(),
         AppState::EntriesList => {
             Line::from("(Esc) Quit | (h) Help | (↵) Select | (⌫) Delete | (n) New | (x) Lock").dim()
         }
@@ -57,9 +59,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         }
     };
 
-    let status = match app.state {
+    let status = match &app.state {
         AppState::InitialCheck => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
         AppState::UnlockPrompt => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
+        AppState::VaultLocked => {Line::from(app.status_message.clone().unwrap_or_default()).dim().dim()},
         AppState::EntriesList => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
         AppState::NewEntryForm => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
         AppState::ViewEntry(_view) => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
@@ -79,7 +82,7 @@ fn render_initial_check(frame: &mut Frame, area: Rect) {
 fn render_unlock_prompt(frame: &mut Frame, area: Rect, input: &str) {
     let horizontal = Layout::horizontal([Constraint::Length(22), Constraint::Fill(1)]);
     let [label_area, pass_area] = area
-        .centered(Constraint::Percentage(50), Constraint::Percentage(50))
+        .centered(Constraint::Percentage(20), Constraint::Percentage(20))
         .layout(&horizontal);
 
     let label = Line::from("Enter vault password:").bold();
@@ -90,13 +93,24 @@ fn render_unlock_prompt(frame: &mut Frame, area: Rect, input: &str) {
     frame.render_widget(pass_paragraph, pass_area);
 }
 
+fn render_locked_vault(frame: &mut Frame, area: Rect) {
+    let vertical = Layout::vertical([Constraint::Percentage(100)]);
+    let [label_area] = area
+        .centered(Constraint::Percentage(50), Constraint::Percentage(20))
+        .layout(&vertical);
+
+    let label = Line::from("Your vault is locked!").bold().centered();
+
+    frame.render_widget(label, label_area);
+}
+
 fn render_entries_list(frame: &mut Frame, area: Rect, app: &mut App) {
     let rows: Vec<Row> = app
         .entries
         .iter()
         .map(|entry| {
             let view = ListEntryView(entry.clone());
-            let updated_at = view.updated_at().format("%Y-%m-%d %H:%M:%S").to_string();
+            let updated_at = view.updated_at().format("%Y-%m-%d %H:%M").to_string();
 
             Row::new(vec![
                 Cell::from(view.service().to_string()),
@@ -123,8 +137,6 @@ fn render_entries_list(frame: &mut Frame, area: Rect, app: &mut App) {
     .style(Style::new().bold())
     .highlight_symbol("|"); 
 
-    // Renderizamos passando o estado da tabela. 
-    // O ratatui vai fazer a matemática do scroll automaticamente!
     frame.render_stateful_widget(table, area, &mut app.table_state);
 }
 

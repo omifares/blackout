@@ -7,6 +7,7 @@ use ratatui::widgets::TableState;
 
 use std::process::{Command, Stdio};
 use std::io::Write;
+use std::time::Instant;
 
 pub trait EntryView {
     fn _id(&self) -> &uuid::Uuid;
@@ -43,6 +44,7 @@ pub struct DetailEntryView {
 pub enum AppState {
     InitialCheck,
     UnlockPrompt,
+    VaultLocked,
     EntriesList,
     NewEntryForm,
     ViewEntry(DetailEntryView),
@@ -60,6 +62,7 @@ pub struct App {
     pub current_field: usize,
     pub table_state: TableState,
     pub status_message: Option<String>,
+    pub last_interaction: Instant,
 }
 
 impl App {
@@ -77,6 +80,7 @@ impl App {
             detail_entry: None,
             table_state,
             status_message: None,
+            last_interaction: Instant::now(),
         }
     }
 
@@ -87,28 +91,43 @@ impl App {
     }
 
     pub fn check_vault_status(&mut self) {
+        if matches!(self.state, AppState::UnlockPrompt) {
+            return;
+        }
+
         match crate::send_command(Request::ListEntries) {
-            Ok(response) => {
-                match response {
-                    Response::Ok(data) => {
+            Ok(response) => match response {
+                Response::Ok(data) => {
+                    self.vault_unlocked = true;
+
+                    if matches!(
+                        self.state,
+                        self::AppState::InitialCheck | self::AppState::UnlockPrompt
+                    ) {
                         self.parse_entries(&data);
-                        self.vault_unlocked = true;
                         self.state = AppState::EntriesList;
                     }
-                    Response::Error(err) => {
-                        if err.contains("Vault is locked") {
-                            self.vault_unlocked = false;
-                            self.state = AppState::UnlockPrompt;
-                        } else {
-                            self.state = AppState::UnlockPrompt; // Fallback
-                        }
+                }
+                Response::Error(err) => {
+                    if err.contains("Vault is locked") {
+                        self.lock_application();
+                    } else {
+                        self.lock_application();
                     }
                 }
-            }
+            },
             Err(_) => {
-                self.state = AppState::UnlockPrompt;
+                self.lock_application();
             }
         }
+    }
+
+    pub fn lock_application(&mut self) {
+        self.vault_unlocked = false;
+        self.entries.clear();
+        self.detail_entry = None;
+        self.status_message = None;
+        self.state = AppState::VaultLocked;
     }
 
     fn parse_entries(&mut self, data: &str) {

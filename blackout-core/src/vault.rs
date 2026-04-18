@@ -7,6 +7,7 @@ use rand::RngCore;
 use rand::rngs::OsRng;
 use zeroize::Zeroize;
 
+#[derive(PartialEq)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Entry {
     pub id: Uuid,
