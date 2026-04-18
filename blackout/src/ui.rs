@@ -75,20 +75,14 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 }
 
 fn render_initial_check(frame: &mut Frame, area: Rect) {
-    let vertical = Layout::vertical([Constraint::Percentage(100)]);
-    let [label_area] = area
-        .centered(Constraint::Percentage(50), Constraint::Percentage(20))
-        .layout(&vertical);
-
-    let label = Line::from("Checking vault status...").bold().centered();
-
-    frame.render_widget(label, label_area);
+    let block = Block::bordered().title("Checking vault status...");
+    frame.render_widget(block, area);
 }
 
 fn render_unlock_prompt(frame: &mut Frame, area: Rect, input: &str) {
     let horizontal = Layout::horizontal([Constraint::Length(22), Constraint::Fill(1)]);
     let [label_area, pass_area] = area
-        .centered(Constraint::Fill(1), Constraint::Percentage(20))
+        .centered(Constraint::Percentage(20), Constraint::Percentage(20))
         .layout(&horizontal);
 
     let label = Line::from("Enter vault password:").bold();
