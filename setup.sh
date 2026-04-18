@@ -28,6 +28,10 @@ check_prerequisites() {
 
 # Install
 install_blackout() {
+
+    # Try stop blackoutd (update)
+    systemctl --user stop blackout.service 2>/dev/null
+
     local USE_MLOCK=""
     if [[ "$1" == "--mlock" ]]; then
         USE_MLOCK="--mlock"
