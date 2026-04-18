@@ -1,5 +1,21 @@
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use std::path::PathBuf;
+
+// Context
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct EntryInput {
+    pub service: String,
+    pub username: String,
+    pub password: String,
+}
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct EntryUpdateInput {
+    pub uuid: Uuid,
+    pub service: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Request {
@@ -9,9 +25,7 @@ pub enum Request {
         master_password: String,
     },
     AddEntry {
-        service: String,
-        username: String,
-        password: String,
+        entry_ctx: EntryInput,
     },
     ListEntries,
     GetEntry {
@@ -24,10 +38,7 @@ pub enum Request {
         uuid: uuid::Uuid,
     },
     UpdateEntry {
-        uuid: uuid::Uuid,
-        service: Option<String>,
-        username: Option<String>,
-        password: Option<String>,
+        entry_ctx: EntryUpdateInput,
     }
 }
 

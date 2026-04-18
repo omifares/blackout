@@ -7,13 +7,12 @@ use rand::RngCore;
 use rand::rngs::OsRng;
 use zeroize::Zeroize;
 
-#[derive(PartialEq)]
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Entry {
     pub id: Uuid,
     pub service: String,
     pub username: String,
-
+    
     #[serde(default)]
     pub secret: String,
 
@@ -21,10 +20,21 @@ pub struct Entry {
     pub updated_at: DateTime<Local>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct VaultSnapshot {
+    pub version: u32,
+    pub timestamp: i64,
+    pub checksum: String,
+    pub file_ref: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Vault {
     pub version: u32,
     pub entries: Vec<Entry>,
+    
+    #[serde(default)]
+    pub history: Vec<VaultSnapshot>,
 }
 
 impl Vault {
@@ -34,7 +44,7 @@ impl Vault {
             service,
             username: user,
             secret: pass,
-            updated_at: Local::now(),
+            updated_at: Local::now()
         };
         self.entries.push(new_entry);
         self.version += 1;
@@ -109,6 +119,7 @@ impl Vault {
             .find(|e| e.id == id)
             .map(|e| e.secret.clone())
     }
+
 }
 
 /// Derive a key from a password using Argon2id.
