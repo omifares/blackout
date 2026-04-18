@@ -52,7 +52,6 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                     app.state = AppState::NewEntryForm;
                 }
                 KeyCode::Char('e') => {
-                    app.reset_form();
                     app.start_editing_entry();
                     app.state = AppState::UpdateEntry;
                 }
@@ -111,7 +110,6 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                     }
                 }
                 KeyCode::Char('e') => {
-                    app.reset_form();
                     app.start_editing_entry();
                     app.state = AppState::UpdateEntry;
                 }
