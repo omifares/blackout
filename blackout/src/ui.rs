@@ -6,7 +6,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::app::{App, AppState, EntryView, ListEntryView};
+use crate::app::{App, AppState, DetailEntryView, EntryView, ListEntryView};
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     let vertical = Layout::vertical([
@@ -28,7 +28,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         AppState::UnlockPrompt => render_unlock_prompt(frame, main, &app.input_buffer),
         AppState::EntriesList => render_entries_list(frame, main, app),
         AppState::NewEntryForm => render_new_entry_form(frame, main, app),
-        AppState::ViewEntry => render_view_entry(frame, main, app),
+        AppState::ViewEntry(view) => render_view_entry(frame, main, app, &view),
         AppState::UpdateEntry => render_edit_entry_form(frame, main, app),
         AppState::ConfirmEntryDelete => render_delete_confirmation(frame, main),
     }
@@ -43,8 +43,8 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             Line::from("(Tab) Next field | (BackTab) Prev field | (Enter) Submit | (Esc) Cancel")
                 .dim()
         }
-        AppState::ViewEntry => {
-            Line::from("(Esc) Back | (x) Lock | (e) Edit | (⌫) Delete | (↵) Copy password")
+        AppState::ViewEntry(_view) => {
+            Line::from("(Esc) Back | (x) Lock | (e) Edit | (⌫) Delete | (↵) Copy password | (v) Toggle password visibility")
                 .dim()
         }
         AppState::UpdateEntry => {
@@ -62,7 +62,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         AppState::UnlockPrompt => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
         AppState::EntriesList => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
         AppState::NewEntryForm => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
-        AppState::ViewEntry => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
+        AppState::ViewEntry(_view) => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
         AppState::UpdateEntry => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
         AppState::ConfirmEntryDelete => { Line::from(app.status_message.clone().unwrap_or_default()).dim() },
     };
@@ -145,7 +145,7 @@ fn render_new_entry_form(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(form, form_area);
 }
 
-fn render_view_entry(frame: &mut Frame, area: Rect, app: &App) {
+fn render_view_entry(frame: &mut Frame, area: Rect, app: &App, view: &DetailEntryView) {
     let vertical = Layout::vertical([Constraint::Percentage(20), Constraint::Percentage(80)]);
     let [title_area, table_area] = area
         .centered(Constraint::Percentage(80), Constraint::Percentage(60))
@@ -157,22 +157,24 @@ fn render_view_entry(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
+    let pass = if !view.show_password { "*".repeat(8) } else { app.detail_entry.as_ref().unwrap().entry.secret.to_string() };
+
     let rows = vec![
         Row::new(vec![
             Cell::from("Service:"),
-            Cell::from(app.detail_entry.as_ref().unwrap().service()),
+            Cell::from(app.detail_entry.as_ref().unwrap().entry.service.clone()),
         ]),
         Row::new(vec![
             Cell::from("Username/Email:"),
-            Cell::from(app.detail_entry.as_ref().unwrap().username()),
+            Cell::from(app.detail_entry.as_ref().unwrap().entry.username.clone()),
         ]),
         Row::new(vec![
             Cell::from("Password:"),
-            Cell::from(app.detail_entry.as_ref().unwrap().secret()),
+            Cell::from(pass),
         ]),
         Row::new(vec![
             Cell::from("Last Modified:"),
-            Cell::from(app.detail_entry.as_ref().unwrap().updated_at().to_string()),
+            Cell::from(app.detail_entry.as_ref().unwrap().entry.updated_at.to_string()),
         ]),
     ];
 
@@ -190,7 +192,7 @@ fn render_view_entry(frame: &mut Frame, area: Rect, app: &App) {
     )
     .column_spacing(2);
 
-    let title = Paragraph::new(app.detail_entry.as_ref().unwrap()._id().to_string()).centered();
+    let title = Paragraph::new(app.detail_entry.as_ref().unwrap().entry.id.to_string()).centered();
     
     frame.render_widget(title, title_area);
     frame.render_widget(table, table_area);

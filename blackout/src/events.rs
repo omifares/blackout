@@ -83,7 +83,7 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
             }
             _ => {}
         },
-        AppState::ViewEntry => {
+        AppState::ViewEntry(ref mut view) => {
             match key.code {
                 KeyCode::Char('x') => {
                     app.lock_vault();
@@ -93,13 +93,16 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 }
                 KeyCode::Enter => {
                     if let Some(entry) = &app.detail_entry {
-                        app.copy_to_clipboard(entry.secret().to_string());
+                        app.copy_to_clipboard(entry.entry.secret.to_string());
                     }
                 }
                 KeyCode::Char('e') => {
                     app.reset_form();
                     app.start_editing_entry();
                     app.state = AppState::UpdateEntry;
+                }
+                KeyCode::Char('v') => {
+                    view.show_password = !view.show_password;
                 }
                 KeyCode::Esc => {
                     app.state = AppState::EntriesList;

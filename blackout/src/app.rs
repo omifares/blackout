@@ -12,7 +12,6 @@ pub trait EntryView {
     fn _id(&self) -> &uuid::Uuid;
     fn service(&self) -> &str;
     fn username(&self) -> &str;
-    fn secret(&self) -> &str;
     fn updated_at(&self) -> DateTime<Local>;
 }
 
@@ -29,42 +28,24 @@ impl EntryView for ListEntryView {
     fn username(&self) -> &str {
         &self.0.username
     }
-    fn secret(&self) -> &str {
-        ""
-    }
     fn updated_at(&self) -> DateTime<Local> {
         self.0.updated_at
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct DetailEntryView(pub Entry);
-
-impl EntryView for DetailEntryView {
-    fn _id(&self) -> &uuid::Uuid {
-        &self.0.id
-    }
-    fn service(&self) -> &str {
-        &self.0.service
-    }
-    fn username(&self) -> &str {
-        &self.0.username
-    }
-    fn secret(&self) -> &str {
-        &self.0.secret
-    }
-    fn updated_at(&self) -> DateTime<Local> {
-        self.0.updated_at
-    }
+#[derive(Debug, Clone, PartialEq)]
+pub struct DetailEntryView {
+    pub entry: Entry,
+    pub show_password: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum AppState {
     InitialCheck,
     UnlockPrompt,
     EntriesList,
     NewEntryForm,
-    ViewEntry,
+    ViewEntry(DetailEntryView),
     UpdateEntry,
     ConfirmEntryDelete,
 }
@@ -249,8 +230,15 @@ impl App {
             let uuid = entry.id;
             if let Ok(Response::Ok(data)) = crate::send_command(Request::GetEntryById { uuid }) {
                 if let Ok(entry) = serde_json::from_str::<Entry>(&data) {
-                    self.detail_entry = Some(DetailEntryView(entry));
-                    self.state = AppState::ViewEntry;
+                    let entry_clone = entry.clone();
+                    self.detail_entry = Some(DetailEntryView {
+                        entry: entry_clone,
+                        show_password: false,
+                    });
+                    self.state = AppState::ViewEntry(DetailEntryView {
+                        entry,
+                        show_password: false,
+                    });
                 }
             } else {
                 let debug_info = format!(
@@ -268,11 +256,14 @@ impl App {
 
             if let Ok(Response::Ok(data)) = crate::send_command(Request::GetEntryById { uuid }) {
                 if let Ok(entry) = serde_json::from_str::<Entry>(&data) {
-                    let detail_entry = DetailEntryView(entry);
+                    let detail_entry = DetailEntryView {
+                        entry,
+                        show_password: false,
+                    };
 
-                    self.form_fields[0] = detail_entry.service().to_string();
-                    self.form_fields[1] = detail_entry.username().to_string();
-                    self.form_fields[2] = detail_entry.secret().to_string();
+                    self.form_fields[0] = detail_entry.entry.service.to_string();
+                    self.form_fields[1] = detail_entry.entry.username.to_string();
+                    self.form_fields[2] = detail_entry.entry.secret.to_string();
 
                     self.state = AppState::UpdateEntry;
                 }
