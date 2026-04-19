@@ -47,6 +47,9 @@ pub enum Request {
     },
     UpdateEntry {
         entry_ctx: EntryUpdateInput,
+    },
+    UpdateMasterPassword {
+        new_password: String,
     }
 }
 
@@ -60,6 +63,6 @@ pub fn get_socket_path() -> PathBuf {
     let uid = unsafe { libc::geteuid() };
     let base_dir = std::env::var("XDG_RUNTIME_DIR")
         .unwrap_or_else(|_| format!("/run/user/{}", uid));
-    
+
     PathBuf::from(base_dir).join("blackout.sock")
 }

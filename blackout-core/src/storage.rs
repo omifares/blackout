@@ -170,4 +170,14 @@ impl Wallet {
             file_ref: file_path.to_string_lossy().into_owned(),
         })
     }
+
+    pub fn update_vault_password(
+        &self,
+        current_passsword: String,
+        new_password: String
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let vault = self.load_vault(&current_passsword)?;
+        self.encrypt_and_save_vault(&vault, &new_password)?;
+        Ok(())
+    }
 }

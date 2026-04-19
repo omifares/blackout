@@ -77,10 +77,9 @@ fn render_form(frame: &mut Frame, area: Rect, title_text: &str, app: &App) {
         .centered(Constraint::Percentage(50), Constraint::Percentage(60))
         .layout(&Layout::vertical([Constraint::Percentage(20), Constraint::Percentage(80)]));
 
-    let cursor = if is_cursor_visible() { "█" } else { " " };
-    
-    let mut lines = Vec::new();
-    let field_labels = ["Service", "User", "Password"];
+    for (i, field) in fields.iter().enumerate() {
+        let is_focused = i as u8 == app.focused_field;
+        let mut input_text = app.get_input_for_field(i);
 
     for (i, label) in field_labels.iter().enumerate() {
         let content = &app.form_fields[i];
