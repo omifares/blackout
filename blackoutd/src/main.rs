@@ -27,7 +27,7 @@ async fn main() {
 
     let daemon = Daemon::new(Arc::new(Wallet::init()));
 
-    info!("Iniciando o daemon...");
+    info!("Starting daemon...");
 
     daemon.run().await.unwrap();
 }

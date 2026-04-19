@@ -85,13 +85,13 @@ impl Daemon {
                     match stream.peer_cred() {
                         Ok(cred) => {
                             if cred.uid() != self.uid {
-                                warn!("HACK ATTEMPT: UID {} tentou se conectar, mas o dono é {}. Conexão derrubada.", cred.uid(), &self.uid);
+                                warn!("UID {} try to connect. Dropping - Not owner {}", cred.uid(), &self.uid);
                                 continue;
                             }
-                            debug!("Conexão aceita do UID {}", cred.uid());
+                            debug!("Accepting UID: {}", cred.uid());
                         }
                         Err(e) => {
-                            warn!("Falha ao ler credenciais do socket: {}. Derrubando.", e);
+                            warn!("Failed to read creds: {}. Dropping.", e);
                             continue;
                         }
                     }
