@@ -54,7 +54,7 @@ fn get_helper_text(state: &AppState) -> Line<'static> {
         AppState::UnlockPrompt => "(↵) Submit | (Esc) Quit",
         AppState::VaultLocked => "(Esc) Quit | (any) Unlock vault",
         AppState::EntriesList => {
-            "(Esc) Quit | (e) Edit | (↵) Select | (⌫) Delete | (n) New | (x) Lock"
+            "(Esc) Quit | (e) Edit | (↵) Select | (⌫) Delete | (n) New | (x) Lock | (?) Options "
         }
         AppState::NewEntryForm(_) | AppState::UpdateEntry(_) | AppState::ChangeMasterPassword(_) => {
             "(Esc) Back | (Tab) Next field | (BackTab) Prev field | (↵) Submit"
@@ -63,7 +63,7 @@ fn get_helper_text(state: &AppState) -> Line<'static> {
             "(Esc) Back | (x) Lock | (e) Edit | (⌫) Delete | (↵) Copy password | (v) Toggle password visibility"
         }
         AppState::ConfirmEntryDelete => "(Esc) Cancel | (↵) Confirm",
-        AppState::Settings(_) => "(Esc) Back",
+        AppState::Settings(_) => "(Esc) Back | (↑ and ↓) Navigate | (↵) Select",
     };
     Line::from(text).dim()
 }
@@ -95,7 +95,7 @@ fn render_form(f: &mut Frame, area: Rect, title: &str, fields: &[FieldConfig], a
         let is_active = i == app.current_field;
         let mut content = app.get_input_for_field(i).to_string();
 
-        if field.is_password && app.obscure_inputs {
+        if field.is_password && app.obscure_inputs && !field.show_password {
             content = "*".repeat(content.len());
         }
 

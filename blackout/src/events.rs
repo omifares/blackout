@@ -50,17 +50,17 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 }
                 KeyCode::Char('n') => {
                     let fields = vec![
-                        FieldConfig { label: "Service ".into(), is_password: false },
-                        FieldConfig { label: "Username ".into(), is_password: false },
-                        FieldConfig { label: "Password ".into(), is_password: true },
+                        FieldConfig { label: "Service ".into(), is_password: false, show_password: false },
+                        FieldConfig { label: "Username ".into(), is_password: false, show_password: false },
+                        FieldConfig { label: "Password ".into(), is_password: true, show_password: false },
                     ];
                     app.open_form(AppState::NewEntryForm(fields), false);
                 }
                 KeyCode::Char('e') => {
                     let fields = vec![
-                        FieldConfig { label: "Edit Service ".into(), is_password: false },
-                        FieldConfig { label: "Edit Username ".into(), is_password: false },
-                        FieldConfig { label: "Edit Password ".into(), is_password: true },
+                        FieldConfig { label: "Edit Service ".into(), is_password: false, show_password: false },
+                        FieldConfig { label: "Edit Username ".into(), is_password: false, show_password: false },
+                        FieldConfig { label: "Edit Password ".into(), is_password: true, show_password: false },
                     ];
                     app.open_form(AppState::UpdateEntry(fields), true);
                 }
@@ -97,13 +97,13 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 }
                 KeyCode::Char('e') => {
                     let fields = vec![
-                        FieldConfig { label: "Edit Service ".into(), is_password: false },
-                        FieldConfig { label: "Edit Username ".into(), is_password: false },
-                        FieldConfig { label: "Edit Password ".into(), is_password: true },
+                        FieldConfig { label: "Edit Service ".into(), is_password: false, show_password: false },
+                        FieldConfig { label: "Edit Username ".into(), is_password: false, show_password: false },
+                        FieldConfig { label: "Edit Password ".into(), is_password: true, show_password: false },
                     ];
                     app.open_form(AppState::UpdateEntry(fields), true);
                 }
-                KeyCode::Char('v') => {
+                KeyCode::F(2) => {
                     view.show_password = !view.show_password;
                 }
                 KeyCode::Esc => {
@@ -149,6 +149,13 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                         field_text.pop();
                     }
                 }
+                KeyCode::F(2)=> {
+                    if let Some(field) = fields.get_mut(app.current_field) {
+                        if field.is_password {
+                            field.show_password = !field.show_password;
+                        }
+                    }
+                }
                 KeyCode::Enter => {
                     app.submit_form();
                 }
@@ -175,9 +182,9 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                         match settings.options[index] {
                             SettingsOption::ChangeMasterPassword => {
                                 let fields = vec![
-                                    FieldConfig { label: "Current Password ".into(), is_password: true },
-                                    FieldConfig { label: "New Password ".into(), is_password: true },
-                                    FieldConfig { label: "Confirm Password ".into(), is_password: true },
+                                    FieldConfig { label: "Current Password ".into(), is_password: true, show_password: false },
+                                    FieldConfig { label: "New Password ".into(), is_password: true, show_password: false },
+                                    FieldConfig { label: "Confirm Password ".into(), is_password: true, show_password: false },
                                 ];
                                 app.open_form(AppState::ChangeMasterPassword(fields), false);
                             }
