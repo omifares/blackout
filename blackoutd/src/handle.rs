@@ -35,9 +35,10 @@ fn needs_auth(req: &Request) -> bool {
 fn is_mutation(req: &Request) -> bool {
     matches!(
         req,
-        Request::AddEntry { .. } | 
-        Request::UpdateEntry { .. } | 
-        Request::DeleteEntry { .. }
+        Request::AddEntry { .. } |
+        Request::UpdateEntry { .. } |
+        Request::DeleteEntry { .. } |
+        Request::UpdateMasterPassword { .. }
     )
 }
 
@@ -63,11 +64,11 @@ pub async fn process_request(
 
     if is_mutation(&req) {
         let mut st = ctx.state.write().await;
-        
+
         if !st.authenticated {
             debug!("Vault is locked. Please unlock it first.");
             return Response::Error("Vault is locked".into());
-        }        
+        }
 
         // Create snapshot
 
@@ -96,6 +97,7 @@ pub async fn process_request(
         Request::GetEntryById { uuid } => handle_get_entry_by_id(uuid, ctx.state).await,
         Request::DeleteEntry { uuid } => handle_delete_entry(ctx, uuid).await,
         Request::UpdateEntry { entry_ctx } => handle_update_entry(ctx, entry_ctx).await,
+        Request::UpdateMasterPassword { new_password } => handle_update_master_password(ctx, new_password ).await,
     }
 }
 
@@ -117,7 +119,7 @@ async fn handle_unlock(
         st.vault = Some(new_vault);
         st.authenticated = true;
         st.master_password = Some(password);
-        
+
         return Response::Ok("Vault initialized and unlocked".into());
     }
 
@@ -155,7 +157,7 @@ async fn handle_add_entry(
 
     if let Some(vault) = &mut st.vault {
         vault.add_entry(entry_ctx.service, entry_ctx.username, entry_ctx.password);
-        
+
         if let Err(e) = ctx.storage.encrypt_and_save_vault(vault, &password) {
             return Response::Error(format!("Save failed: {}", e));
         }
@@ -169,7 +171,7 @@ pub async fn handle_list_entries(ctx: &Context) -> Response {
     let st = ctx.state.read().await;
 
     if let Some(vault) = &st.vault {
-        
+
         let payload = VaultListPayload {
             entries: vault.entries.clone(),
             version: vault.version,
@@ -281,5 +283,26 @@ async fn handle_update_entry(
     } else {
         debug!("Vault is not loaded.");
         Response::Error("Vault is not loaded.".into())
+    }
+}
+
+async fn handle_update_master_password(
+    ctx: Context,
+    new_password: String
+) -> Response {
+    let mut st = ctx.state.write().await;
+
+    let Some(password) = st.master_password.clone() else {
+        return Response::Error("Vault is locked or password not in memory".into());
+    };
+
+    let Some(_vault) = &mut st.vault else {
+        debug!("Vault is not loaded.");
+        return Response::Error("Vault is not loaded.".into());
+    };
+
+    match ctx.storage.update_vault_password(password, new_password) {
+        Ok(_) => Response::Ok("Master password updated successfully".into()),
+        Err(e) => Response::Error(format!("Failed to update master password: {}", e)),
     }
 }
