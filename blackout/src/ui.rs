@@ -1,4 +1,4 @@
-use ratatui::widgets::{Block, Cell, Paragraph, Row, Table};
+use ratatui::widgets::{Block, Cell, Paragraph, Row, Table, ListItem, List};
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
@@ -6,7 +6,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::app::{App, AppState, DetailEntryView, EntryView, ListEntryView};
+use crate::app::{App, AppState, DetailEntryView, EntryView, ListEntryView, FieldConfig};
 
 fn is_cursor_visible() -> bool {
     std::time::SystemTime::now()
@@ -35,10 +35,12 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         AppState::UnlockPrompt => render_unlock_prompt(frame, main, &app.input_buffer),
         AppState::VaultLocked => render_locked_vault(frame, main),
         AppState::EntriesList => render_entries_list(frame, main, app),
-        AppState::NewEntryForm => render_form(frame, main, "New entry", app),
-        AppState::UpdateEntry => render_form(frame, main, "Edit entry", app),
+        AppState::NewEntryForm(fields) => render_form(frame, main, "New entry", &fields, app),
+        AppState::UpdateEntry(fields) => render_form(frame, main, "Edit entry", &fields, app),
         AppState::ViewEntry(view) => render_view_entry(frame, main, app, view),
         AppState::ConfirmEntryDelete => render_delete_confirmation(frame, main),
+        AppState::Settings(_) => render_settings(frame, main, app),
+        AppState::ChangeMasterPassword(fields) => render_form(frame, main, "Change Master Password", &fields, app),
     }
 
     // Status & Footer
@@ -49,18 +51,19 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 fn get_helper_text(state: &AppState) -> Line<'static> {
     let text = match state {
         AppState::InitialCheck => "(Esc) Quit",
-        AppState::UnlockPrompt => "(Enter) Submit | (Esc) Quit",
+        AppState::UnlockPrompt => "(↵) Submit | (Esc) Quit",
         AppState::VaultLocked => "(Esc) Quit | (any) Unlock vault",
         AppState::EntriesList => {
             "(Esc) Quit | (e) Edit | (↵) Select | (⌫) Delete | (n) New | (x) Lock"
         }
-        AppState::NewEntryForm | AppState::UpdateEntry => {
-            "(Tab) Next field | (BackTab) Prev field | (Enter) Submit | (Esc) Cancel"
+        AppState::NewEntryForm(_) | AppState::UpdateEntry(_) | AppState::ChangeMasterPassword(_) => {
+            "(Esc) Back | (Tab) Next field | (BackTab) Prev field | (↵) Submit"
         }
         AppState::ViewEntry(_) => {
             "(Esc) Back | (x) Lock | (e) Edit | (⌫) Delete | (↵) Copy password | (v) Toggle password visibility"
         }
         AppState::ConfirmEntryDelete => "(Esc) Cancel | (↵) Confirm",
+        AppState::Settings(_) => "(Esc) Back",
     };
     Line::from(text).dim()
 }
@@ -72,32 +75,47 @@ fn get_status_text(app: &App) -> Line<'_> {
     }
 }
 
-fn render_form(frame: &mut Frame, area: Rect, title_text: &str, app: &App) {
-    let [title_area, form_area] = area
-        .centered(Constraint::Percentage(50), Constraint::Percentage(60))
-        .layout(&Layout::vertical([Constraint::Percentage(20), Constraint::Percentage(80)]));
+fn render_form(f: &mut Frame, area: Rect, title: &str, fields: &[FieldConfig], app: &App) {
+    let horizontal = Layout::horizontal([Constraint::Fill(1)]);
+    let [form_area] = area
+        .centered(Constraint::Percentage(50), Constraint::Percentage(50))
+        .layout(&horizontal);
+
+    let mut lines = Vec::new();
+
+    lines.push(Line::from(Span::styled(
+        format!("{}", title.to_uppercase()),
+        Style::default().bold()
+    )));
+    lines.push(Line::from(""));
+
+    let cursor_char = if is_cursor_visible() { "█" } else { " " };
 
     for (i, field) in fields.iter().enumerate() {
-        let is_focused = i as u8 == app.focused_field;
-        let mut input_text = app.get_input_for_field(i);
-
-    for (i, label) in field_labels.iter().enumerate() {
-        let content = &app.form_fields[i];
         let is_active = i == app.current_field;
-        
-        let line = if is_active {
-            Line::from(vec![
-                Span::styled(format!("{}: ", label), Style::default().bold()),
-                Span::raw(format!("{}{}", content, cursor)),
-            ])
+        let mut content = app.get_input_for_field(i).to_string();
+
+        if field.is_password && app.obscure_inputs {
+            content = "*".repeat(content.len());
+        }
+
+        if is_active {
+            lines.push(Line::from(vec![
+                Span::styled(format!("{}: ", field.label), Style::default().bold()),
+                Span::raw(content),
+                Span::styled(cursor_char, Style::default()),
+            ]));
         } else {
-            Line::from(format!("{}: {}", label, content))
-        };
-        lines.push(line);
+            lines.push(Line::from(vec![
+                Span::styled(format!("{}: ", field.label), Style::default()),
+                Span::styled(content, Style::default()),
+            ]));
+        }
+
+        lines.push(Line::from(""));
     }
 
-    frame.render_widget(Paragraph::new(title_text).centered(), title_area);
-    frame.render_widget(Paragraph::new(lines), form_area);
+    f.render_widget(Paragraph::new(lines), form_area);
 }
 
 fn render_initial_check(frame: &mut Frame, area: Rect) {
@@ -113,7 +131,7 @@ fn render_unlock_prompt(frame: &mut Frame, area: Rect, input: &str) {
     let label = Line::from("Enter vault password:").bold();
     let cursor = if is_cursor_visible() { "█" } else { " " };
     let mask = "*".repeat(input.chars().count());
-    let pass_display = format!("{}{}", mask, cursor); 
+    let pass_display = format!("{}{}", mask, cursor);
     let pass_paragraph = Paragraph::new(pass_display);
 
     frame.render_widget(label, label_area);
@@ -222,4 +240,27 @@ fn render_delete_confirmation(frame: &mut Frame, area: Rect) {
         Line::from(" [y]es  |  [n]o ").centered().bold(),
     ];
     frame.render_widget(Paragraph::new(text), confirm_area);
+}
+
+fn render_settings(frame: &mut Frame, area: Rect, app: &mut App) {
+    let [title_area, list_area] = area
+            .centered(Constraint::Percentage(50), Constraint::Percentage(50))
+            .layout(&Layout::vertical([Constraint::Percentage(20), Constraint::Percentage(80)]));
+
+
+    if let AppState::Settings(ref mut settings) = app.state {
+        let items: Vec<ListItem> = settings.options
+            .iter()
+            .map(|opt| ListItem::new(opt.as_str()))
+            .collect();
+
+        let list = List::new(items)
+            .highlight_symbol("|");
+
+        frame.render_widget(
+                Paragraph::new("Settings").centered(),
+                title_area,
+            );
+        frame.render_stateful_widget(list, list_area, &mut settings.list_state);
+    }
 }

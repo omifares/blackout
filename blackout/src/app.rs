@@ -1,9 +1,9 @@
-use blackout_core::ipc::{EntryInput, EntryUpdateInput, Request, Response, VaultListPayload};
+use blackout_core::ipc::{EntryInput, Request, Response, VaultListPayload};
 use blackout_core::vault::Entry;
 
 use chrono::{DateTime, Local};
 
-use ratatui::widgets::TableState;
+use ratatui::widgets::{TableState, ListState};
 
 use std::process::{Command, Stdio};
 use std::io::Write;
@@ -40,16 +40,60 @@ pub struct DetailEntryView {
     pub show_password: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct FieldConfig {
+    pub label: String,
+    pub is_password: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SettingsOption {
+    ChangeMasterPassword,
+    A,
+    B,
+}
+
+impl SettingsOption {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ChangeMasterPassword => "Change Master Password",
+            Self::A => "Not implemented",
+            Self::B => "Not implemented",
+        }
+    }
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct SettingsState {
+    pub list_state: ListState,
+    pub options: Vec<SettingsOption>,
+}
+
+impl Default for SettingsState {
+    fn default() -> Self {
+        Self {
+            list_state: ListState::default(),
+            options: vec![
+                SettingsOption::ChangeMasterPassword,
+                SettingsOption::A,
+                SettingsOption::B,
+            ],
+        }
+    }
+}
+
 #[derive(PartialEq, Debug, Clone)]
 pub enum AppState {
     InitialCheck,
     UnlockPrompt,
     VaultLocked,
     EntriesList,
-    NewEntryForm,
+    NewEntryForm(Vec<FieldConfig>),
     ViewEntry(DetailEntryView),
-    UpdateEntry,
+    UpdateEntry(Vec<FieldConfig>),
     ConfirmEntryDelete,
+    Settings(SettingsState),
+    ChangeMasterPassword(Vec<FieldConfig>),
 }
 
 pub struct App {
@@ -58,13 +102,14 @@ pub struct App {
     pub entries: Vec<Entry>,
     pub detail_entry: Option<DetailEntryView>,
     pub input_buffer: String,     // For password input
-    pub form_fields: [String; 3], // service, user, password
-    pub current_field: usize,
     pub table_state: TableState,
     pub status_message: Option<String>,
     pub last_interaction: Instant,
     pub last_tick: std::time::Instant,
     pub vault_version: u32,
+    pub form_fields: Vec<String>,
+    pub current_field: usize,
+    pub obscure_inputs: bool,
 }
 
 impl App {
@@ -77,7 +122,6 @@ impl App {
             vault_unlocked: false,
             entries: vec![],
             input_buffer: String::new(),
-            form_fields: [String::new(), String::new(), String::new()],
             current_field: 0,
             detail_entry: None,
             table_state,
@@ -85,6 +129,8 @@ impl App {
             last_interaction: Instant::now(),
             last_tick: Instant::now(),
             vault_version: 0,
+            form_fields: vec![String::new(), String::new(), String::new()], // Agora é Vec (Resolve E0308)
+            obscure_inputs: true,
         }
     }
 
@@ -97,7 +143,7 @@ impl App {
     pub fn check_vault_status(&mut self) {
         if matches!(
             self.state,
-            AppState::UnlockPrompt | AppState::UpdateEntry | AppState::NewEntryForm
+            AppState::UnlockPrompt | AppState::UpdateEntry(_) | AppState::NewEntryForm(_)
         ) {
             return;
         }
@@ -143,7 +189,7 @@ impl App {
                     self.table_state.select(Some(0));
                 }
             }
-            Err(e) => { 
+            Err(e) => {
                 let debug_info = format!("Parser Error: {}\n\nReceived Data:\n{}", e, data);
                 let _ = std::fs::write("blackout_debug.txt", debug_info);
             }
@@ -198,40 +244,85 @@ impl App {
         }
     }
 
+    pub fn get_input_for_field(&self, index: usize) -> &str {
+        self.form_fields.get(index).map(|s| s.as_str()).unwrap_or("")
+    }
+
     pub fn submit_form(&mut self) {
-        let service = &self.form_fields[0];
-        let user = &self.form_fields[1];
-        let password = &self.form_fields[2];
+        match &self.state {
+            AppState::NewEntryForm(_) => {
+                let service = &self.form_fields[0];
+                let user = &self.form_fields[1];
+                let password = &self.form_fields[2];
 
-        let entry_ctx = EntryInput {
-            service: service.clone(),
-            username: user.clone(),
-            password: password.clone(),
-        };
+                if service.is_empty() || user.is_empty() || password.is_empty() {
+                    self.status_message = Some("All fields are required!".to_string());
+                    return;
+                }
 
-        if !service.is_empty() && !user.is_empty() && !password.is_empty() {
-            match crate::send_command(Request::AddEntry { entry_ctx }) {
-                Ok(Response::Ok(_)) => {
-                    self.load_entries();
-                    self.state = AppState::EntriesList;
-                    self.status_message = Some("Entry successfully added!".to_string());
-                    self.reset_form();
+                let entry_ctx = EntryInput {
+                    service: service.clone(),
+                    username: user.clone(),
+                    password: password.clone(),
+                };
+
+                match crate::send_command(Request::AddEntry { entry_ctx }) {
+                    Ok(Response::Ok(_)) => {
+                        self.load_entries();
+                        self.state = AppState::EntriesList;
+                        self.status_message = Some("Entry successfully added!".to_string());
+                        self.reset_form();
+                    }
+                    Ok(Response::Error(e)) => self.log_error("Add Entry", e),
+                    Err(_) => self.status_message = Some("Communication error".into()),
                 }
-                Ok(Response::Error(e)) => {
-                    let debug_info = format!(
-                        "Add Entry Error: {}\nData:{}",
-                        e,
-                        &self.form_fields.join(",")
-                    );
-                    let _ = std::fs::write("blackout_debug.txt", debug_info);
-                }
-                Err(_) => {}
             }
+
+            AppState::ChangeMasterPassword(_) => {
+                let old = &self.form_fields[0];
+                let new = &self.form_fields[1];
+                let confirm = &self.form_fields[2];
+
+                if new.is_empty() || old.is_empty() {
+                    self.status_message = Some("Fields cannot be empty!".into());
+                    return;
+                }
+
+                if new != confirm {
+                    self.status_message = Some("New passwords do not match!".into());
+                    return;
+                }
+
+                match crate::send_command(Request::UpdateMasterPassword {
+                    new_password: new.clone()
+                }) {
+                    Ok(Response::Ok(_)) => {
+                        self.state = AppState::EntriesList;
+                        self.status_message = Some("Master password updated!".into());
+                        self.reset_form();
+                    }
+                    Ok(Response::Error(e)) => self.log_error("Update Master Pass", e),
+                    Err(_) => self.status_message = Some("Communication error".into()),
+                }
+            }
+
+            _ => {}
         }
     }
 
+    fn log_error(&mut self, action: &str, err: String) {
+        let debug_info = format!(
+            "{} Error: {}\nData: {}",
+            action, err, self.form_fields.join(",")
+        );
+        let _ = std::fs::write("blackout_debug.txt", debug_info);
+        self.status_message = Some(format!("❌ {} failed. Check debug log.", action));
+    }
+
     pub fn reset_form(&mut self) {
-        self.form_fields = [String::new(), String::new(), String::new()];
+        for field in self.form_fields.iter_mut() {
+            field.clear();
+        }
         self.current_field = 0;
         self.table_state.select(Some(0));
         self.status_message = None;
@@ -280,66 +371,31 @@ impl App {
         }
     }
 
-    pub fn start_editing_entry(&mut self) {
+    pub fn populate_form(&mut self) {
         if let Some(entry) = self.get_selected_entry() {
             let uuid = entry.id;
 
             if let Ok(Response::Ok(data)) = crate::send_command(Request::GetEntryById { uuid }) {
                 if let Ok(entry) = serde_json::from_str::<Entry>(&data) {
-                    let detail_entry = DetailEntryView {
-                        entry,
-                        show_password: false,
-                    };
-
-                    self.form_fields[0] = detail_entry.entry.service.to_string();
-                    self.form_fields[1] = detail_entry.entry.username.to_string();
-                    self.form_fields[2] = detail_entry.entry.secret.to_string();
-
-                    self.state = AppState::UpdateEntry;
+                    self.form_fields[0] = entry.service.to_string();
+                    self.form_fields[1] = entry.username.to_string();
+                    self.form_fields[2] = entry.secret.to_string();
                 }
             } else {
-                let debug_info = format!(
-                    "View Entry Error: Failed to get entry details for ID: {}",
-                    uuid
-                );
-                let _ = std::fs::write("blackout_debug.txt", debug_info);
+                self.status_message = Some("❌ Falha ao carregar detalhes".into());
             }
         }
     }
 
-    pub fn submit_entry_update(&mut self) {
-        if let Some(entry) = self.get_selected_entry() {
-            let uuid = entry.id;
+    pub fn open_form(&mut self, new_state: AppState, populate: bool) {
+        self.reset_form();
 
-            let service = self.form_fields[0].clone();
-            let username = self.form_fields[1].clone();
-            let password = self.form_fields[2].clone();
-
-            let entry_ctx = EntryUpdateInput {
-                uuid: uuid,
-                service: Some(service.clone()),
-                username: Some(username.clone()),
-                password: Some(password.clone()),
-            };
-
-            match crate::send_command(Request::UpdateEntry { entry_ctx }) {
-                Ok(Response::Ok(_)) => {
-                    self.load_entries();
-                    self.state = AppState::EntriesList;
-                    self.status_message = Some("Entry successfully edited!".to_string());
-                    self.reset_form();
-                }
-                Ok(Response::Error(e)) => {
-                    let debug_info = format!(
-                        "Update Entry Error: {}\nData:{}",
-                        e,
-                        self.form_fields.join(",")
-                    );
-                    let _ = std::fs::write("blackout_debug.txt", debug_info);
-                }
-                Err(_) => {}
-            }
+        if populate {
+            self.populate_form();
         }
+
+        self.current_field = 0;
+        self.state = new_state;
     }
 
     pub fn copy_to_clipboard(&mut self, text: String) {
