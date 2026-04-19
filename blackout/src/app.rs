@@ -63,6 +63,7 @@ pub struct App {
     pub table_state: TableState,
     pub status_message: Option<String>,
     pub last_interaction: Instant,
+    pub last_tick: std::time::Instant,
 }
 
 impl App {
@@ -81,6 +82,7 @@ impl App {
             table_state,
             status_message: None,
             last_interaction: Instant::now(),
+            last_tick: Instant::now(),
         }
     }
 
