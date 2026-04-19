@@ -5,7 +5,7 @@ use tokio::sync::RwLock;
 use tracing::debug;
 use uuid::Uuid;
 
-use blackout_core::ipc::{EntryInput, EntryUpdateInput, Request, Response};
+use blackout_core::ipc::{EntryInput, EntryUpdateInput, Request, Response, VaultListPayload};
 use blackout_core::storage::Wallet;
 use blackout_core::vault::Vault;
 
@@ -91,7 +91,7 @@ pub async fn process_request(
         Request::Lock => handle_lock(ctx.state).await,
         Request::Unlock { master_password } => handle_unlock(ctx, master_password).await,
         Request::AddEntry { entry_ctx } => handle_add_entry(ctx, entry_ctx).await,
-        Request::ListEntries => handle_list_entries(ctx.state).await,
+        Request::ListEntries => handle_list_entries(&ctx).await,
         Request::GetEntry { service } => handle_get_entry(service, ctx.state).await,
         Request::GetEntryById { uuid } => handle_get_entry_by_id(uuid, ctx.state).await,
         Request::DeleteEntry { uuid } => handle_delete_entry(ctx, uuid).await,
@@ -117,6 +117,7 @@ async fn handle_unlock(
         st.vault = Some(new_vault);
         st.authenticated = true;
         st.master_password = Some(password);
+        
         return Response::Ok("Vault initialized and unlocked".into());
     }
 
@@ -164,26 +165,20 @@ async fn handle_add_entry(
     }
 }
 
-async fn handle_list_entries(state: Arc<RwLock<DaemonState>>) -> Response {
-    let st = state.read().await;
+pub async fn handle_list_entries(ctx: &Context) -> Response {
+    let st = ctx.state.read().await;
 
     if let Some(vault) = &st.vault {
-        let entries: Vec<serde_json::Value> = vault
-            .list_entries()
-            .iter()
-            .map(|entry| {
-                json!({
-                    "id": entry.id.to_string(),
-                    "service": entry.service,
-                    "username": entry.username,
-                    "updated_at": entry.updated_at.to_string(),
-                })
-            })
-            .collect();
-        Response::Ok(serde_json::to_string(&entries).unwrap())
+        
+        let payload = VaultListPayload {
+            entries: vault.entries.clone(),
+            version: vault.version,
+        };
+
+        let data = serde_json::to_string(&payload).unwrap();
+        Response::Ok(data)
     } else {
-        debug!("Vault is not loaded.");
-        Response::Error("Vault is not loaded.".into())
+        Response::Error("Vault is locked".into())
     }
 }
 

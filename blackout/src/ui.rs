@@ -16,6 +16,7 @@ fn is_cursor_visible() -> bool {
 }
 
 pub fn render(frame: &mut Frame, app: &mut App) {
+    let version = env!("CARGO_PKG_VERSION");
     let vertical = Layout::vertical([
         Constraint::Length(1),
         Constraint::Fill(1),
@@ -27,7 +28,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     .vertical_margin(1);
     let [top, main, status_area, bottom] = frame.area().layout(&vertical);
 
-    frame.render_widget(Line::from(Span::from("Blackout").bold()).centered(), top);
+    frame.render_widget(Line::from(Span::from(format!("Blackout - v{version}")).bold()).centered(), top);
 
     match &app.state {
         AppState::InitialCheck => render_initial_check(frame, main),
@@ -51,7 +52,7 @@ fn get_helper_text(state: &AppState) -> Line<'static> {
         AppState::UnlockPrompt => "(Enter) Submit | (Esc) Quit",
         AppState::VaultLocked => "(Esc) Quit | (any) Unlock vault",
         AppState::EntriesList => {
-            "(Esc) Quit | (h) Help | (↵) Select | (⌫) Delete | (n) New | (x) Lock"
+            "(Esc) Quit | (e) Edit | (↵) Select | (⌫) Delete | (n) New | (x) Lock"
         }
         AppState::NewEntryForm | AppState::UpdateEntry => {
             "(Tab) Next field | (BackTab) Prev field | (Enter) Submit | (Esc) Cancel"
@@ -64,8 +65,11 @@ fn get_helper_text(state: &AppState) -> Line<'static> {
     Line::from(text).dim()
 }
 
-fn get_status_text(app: &'_ App) -> Line<'_> {
-    Line::from(app.status_message.as_deref().unwrap_or("")).dim()
+fn get_status_text(app: &App) -> Line<'_> {
+    match &app.status_message {
+        Some(msg) => Line::from(msg.as_str()).dim(),
+        None => Line::from(format!("vault v{}", app.vault_version)).dim(),
+    }
 }
 
 fn render_form(frame: &mut Frame, area: Rect, title_text: &str, app: &App) {

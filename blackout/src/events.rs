@@ -117,6 +117,7 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                     view.show_password = !view.show_password;
                 }
                 KeyCode::Esc => {
+                    app.reset_form();
                     app.state = AppState::EntriesList;
                 }
                 _ => {}

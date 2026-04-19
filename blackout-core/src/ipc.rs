@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use std::path::PathBuf;
 
+use crate::vault::Entry;
+
 // Context
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EntryInput {
@@ -15,6 +17,12 @@ pub struct EntryUpdateInput {
     pub service: Option<String>,
     pub username: Option<String>,
     pub password: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct VaultListPayload {
+    pub entries: Vec<Entry>,
+    pub version: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

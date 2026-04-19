@@ -1,4 +1,4 @@
-use blackout_core::ipc::{EntryInput, EntryUpdateInput, Request, Response};
+use blackout_core::ipc::{EntryInput, EntryUpdateInput, Request, Response, VaultListPayload};
 use blackout_core::vault::Entry;
 
 use chrono::{DateTime, Local};
@@ -64,6 +64,7 @@ pub struct App {
     pub status_message: Option<String>,
     pub last_interaction: Instant,
     pub last_tick: std::time::Instant,
+    pub vault_version: u32,
 }
 
 impl App {
@@ -83,6 +84,7 @@ impl App {
             status_message: None,
             last_interaction: Instant::now(),
             last_tick: Instant::now(),
+            vault_version: 0,
         }
     }
 
@@ -133,9 +135,10 @@ impl App {
     }
 
     fn parse_entries(&mut self, data: &str) {
-        match serde_json::from_str::<Vec<Entry>>(data) {
-            Ok(entries) => {
-                self.entries = entries;
+        match serde_json::from_str::<VaultListPayload>(data) {
+            Ok(payload) => {
+                self.entries = payload.entries;
+                self.vault_version = payload.version;
                 if self.table_state.selected().is_none() && !self.entries.is_empty() {
                     self.table_state.select(Some(0));
                 }
@@ -231,6 +234,7 @@ impl App {
         self.form_fields = [String::new(), String::new(), String::new()];
         self.current_field = 0;
         self.table_state.select(Some(0));
+        self.status_message = None;
     }
 
     pub fn delete_selected_entry(&mut self) {
