@@ -56,6 +56,11 @@ pub struct FieldConfig {
     pub show_password: bool,
 }
 
+pub enum SelectedItem<'a> {
+    Entry(&'a Entry),
+    Snapshot(&'a VaultSnapshot),
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SettingsOption {
     ChangeMasterPassword,
@@ -151,10 +156,30 @@ impl App {
         self.status_time = Some(Instant::now());
     }
 
-    pub fn get_selected_entry(&self) -> Option<&Entry> {
-        self.table_state
-            .selected()
-            .and_then(|i| self.entries.get(i))
+    pub fn get_selected_item(&self) -> Option<SelectedItem<'_>> {
+        match &self.state {
+            AppState::EntriesList | AppState::ConfirmEntryDelete | AppState::UpdateEntry(_) => self
+                .table_state
+                .selected()
+                .and_then(|i| self.entries.get(i))
+                .map(SelectedItem::Entry),
+
+            AppState::SnapshotList => self
+                .table_state
+                .selected()
+                .and_then(|visual_index| {
+                    // Convert visual index to real index (fix: reverse table)
+                    let len = self.snapshots.len();
+                    if len == 0 || visual_index >= len {
+                        return None;
+                    }
+                    let real_index = len - 1 - visual_index;
+                    self.snapshots.get(real_index)
+                })
+                .map(SelectedItem::Snapshot),
+
+            _ => None,
+        }
     }
 
     pub fn check_vault_status(&mut self) {
@@ -260,33 +285,34 @@ impl App {
     pub fn next_index(&mut self) {
         let max_index = self.cal_max_index();
         if max_index > 0 {
-            self.table_state.select(Some(
-                (self.table_state.selected().unwrap_or(0) + 1) % max_index,
-            ));
+            let next = self
+                .table_state
+                .selected()
+                .map_or(0, |i| (i + 1) % max_index);
+            self.table_state.select(Some(next));
         }
     }
 
     pub fn prev_index(&mut self) {
         let max_index = self.cal_max_index();
         if max_index > 0 {
-            let current_index = self.table_state.selected().unwrap_or(0);
-            if current_index == 0 {
-                self.table_state.select(Some(max_index - 1));
-            } else {
-                self.table_state.select(Some(current_index - 1));
-            }
+            let prev = self.table_state.selected().map_or(max_index - 1, |i| {
+                if i == 0 {
+                    max_index - 1 // Go to end
+                } else {
+                    i - 1
+                }
+            });
+            self.table_state.select(Some(prev));
         }
     }
 
-    pub fn cal_max_index(&mut self) -> usize {
-        let mut max_index = 0;
-        match &self.state {
-            AppState::EntriesList => max_index = self.entries.len(),
-            AppState::SnapshotList => max_index = self.snapshots.len(),
-            _ => {}
+    pub fn cal_max_index(&self) -> usize {
+        match self.state {
+            AppState::EntriesList => self.entries.len(),
+            AppState::SnapshotList => self.snapshots.len(),
+            _ => 0,
         }
-
-        max_index
     }
 
     pub fn get_input_for_field(&self, index: usize) -> &str {
@@ -297,12 +323,18 @@ impl App {
     }
 
     pub fn submit_form_update(&mut self) {
-        let Some(entry) = self.get_selected_entry() else {
+        let Some(item) = self.get_selected_item() else {
             self.set_status("No entry selected for update".into());
             return;
         };
 
-        let uuid = entry.id;
+        let uuid = match item {
+            SelectedItem::Entry(entry) => entry.id,
+            _ => {
+                self.set_status("Type mismatch: Selected item is not an entry".into());
+                return;
+            }
+        };
 
         let service = &self.form_fields[0];
         let user = &self.form_fields[1];
@@ -412,12 +444,19 @@ impl App {
     }
 
     pub fn delete_selected_entry(&mut self) {
-        let Some(entry) = self.get_selected_entry() else {
+        let Some(item) = self.get_selected_item() else {
             self.set_status("No entry selected for update".into());
             return;
         };
 
-        let uuid = entry.id;
+        let uuid = match item {
+            SelectedItem::Entry(entry) => entry.id,
+            _ => {
+                self.set_status("Type mismatch: Selected item is not an entry".into());
+                return;
+            }
+        };
+
         match crate::send_command(Request::DeleteEntry { uuid }) {
             Ok(Response::Ok(_)) => {
                 self.load_entries();
@@ -433,11 +472,19 @@ impl App {
     }
 
     pub fn view_selected_entry(&mut self) {
-        let Some(entry) = self.get_selected_entry() else {
+        let Some(item) = self.get_selected_item() else {
             self.set_status("No entry selected for update".into());
             return;
         };
-        let uuid = entry.id;
+
+        let uuid = match item {
+            SelectedItem::Entry(entry) => entry.id,
+            _ => {
+                self.set_status("Type mismatch: Selected item is not an entry".into());
+                return;
+            }
+        };
+
         if let Ok(Response::Ok(data)) = crate::send_command(Request::GetEntryById { uuid }) {
             if let Ok(entry) = serde_json::from_str::<Entry>(&data) {
                 let entry_clone = entry.clone();
@@ -460,11 +507,19 @@ impl App {
     }
 
     pub fn populate_form(&mut self) {
-        let Some(entry) = self.get_selected_entry() else {
+        let Some(item) = self.get_selected_item() else {
             self.set_status("No entry selected for update".into());
             return;
         };
-        let uuid = entry.id;
+
+        let uuid = match item {
+            SelectedItem::Entry(entry) => entry.id,
+            _ => {
+                self.set_status("Type mismatch: Selected item is not an entry".into());
+                return;
+            }
+        };
+
         if let Ok(Response::Ok(data)) = crate::send_command(Request::GetEntryById { uuid }) {
             if let Ok(entry) = serde_json::from_str::<Entry>(&data) {
                 self.form_fields[0] = entry.service.to_string();
@@ -502,6 +557,37 @@ impl App {
                 let _ = std::fs::write("blackout_debug.txt", format!("Erro wl-copy: {}", e));
                 self.set_status("Failed to copy (missing wl-copy)".into());
             }
+        }
+    }
+
+    pub fn restore_selected_snapshot(&mut self) {
+        let Some(item) = self.get_selected_item() else {
+            self.set_status("No snapshot selected to restore".into());
+            return;
+        };
+
+        let version = match item {
+            SelectedItem::Snapshot(snap) => snap.version,
+            _ => {
+                self.set_status("Type mismatch: Selected item is not an snapshot".into());
+                return;
+            }
+        };
+
+        match crate::send_command(Request::RestoreSnapshot {
+            target_version: version,
+        }) {
+            Ok(Response::Ok(_)) => {
+                self.load_entries();
+                self.state = AppState::EntriesList;
+                self.set_status(format!("Snapshot v{} restored!", version).into());
+            }
+            Ok(Response::Error(e)) => {
+                self.set_status(format!("Fail: {}", e).into());
+                let debug_info = format!("Restore snapshot Error: {}\nVersion:{}", e, version);
+                let _ = std::fs::write("blackout_debug.txt", debug_info);
+            }
+            Err(_) => {}
         }
     }
 }

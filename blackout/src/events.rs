@@ -252,6 +252,9 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
             KeyCode::Down => {
                 app.next_index();
             }
+            KeyCode::Enter => {
+                app.restore_selected_snapshot();
+            }
             _ => {}
         },
     }

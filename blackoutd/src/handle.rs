@@ -73,6 +73,24 @@ pub async fn process_request(
             return Response::Error("Vault is locked".into());
         }
 
+        // PRE-FLIGHT
+        if let Request::RestoreSnapshot { target_version } = &req {
+            if let Some(vault) = &st.vault {
+                let can_restore = vault
+                    .history
+                    .iter()
+                    .any(|s| s.version == *target_version && s.file_ref.is_some());
+
+                if !can_restore {
+                    error!("Can't load snapshot file v{}", target_version);
+                    return Response::Error(format!(
+                        "Fail to load snapshot from disk: v{}",
+                        target_version
+                    ));
+                }
+            }
+        }
+
         // Create snapshot
         let reason = match &req {
             Request::AddEntry { entry_ctx } => format!("Add entry: {}", entry_ctx.service),
@@ -91,6 +109,9 @@ pub async fn process_request(
                 entry_ctx.service.as_deref().unwrap_or("Unknown")
             ),
             Request::UpdateMasterPassword { .. } => "Master password rotation".to_string(),
+            Request::RestoreSnapshot { target_version } => {
+                format!("Restore snapshot {}", target_version).to_string()
+            }
             _ => "Unknown reason".into(),
         };
 
@@ -102,33 +123,11 @@ pub async fn process_request(
         if let Some(vault) = &mut st.vault {
             match ctx
                 .storage
-                .create_backup_file(&vault.entries, vault.version, &password, reason)
+                .create_backup_file(&vault.entries, vault.version, &password, &reason)
             {
                 Ok(meta) => {
-                    // Remove old history
-                    let config = DaemonConfig::load_config();
-                    let mut snapshots: Vec<&mut VaultSnapshot> = vault
-                        .history
-                        .iter_mut()
-                        .filter(|s| s.file_ref.is_some())
-                        .collect();
-
-                    if config.max_snapshots > 0 {
-                        let over_snaps = snapshots.len().saturating_sub(config.max_snapshots);
-
-                        if over_snaps > 0 {
-                            for snap in snapshots.iter_mut().take(over_snaps) {
-                                if let Some(path) = &snap.file_ref {
-                                    if let Err(e) = std::fs::remove_file(path) {
-                                        warn!("Fail to remove snapshot file '{}': {}", path, e);
-                                    }
-                                };
-
-                                snap.file_ref = None;
-                            }
-                        }
-                    }
                     vault.history.push(meta);
+                    prune_excess_snapshots(vault);
                 }
                 Err(e) => return Response::Error(format!("Snapshot failed: {}", e)),
             }
@@ -149,6 +148,9 @@ pub async fn process_request(
             handle_update_master_password(ctx, new_password).await
         }
         Request::ListSnapshots => handle_list_snapshots(&ctx).await,
+        Request::RestoreSnapshot { target_version } => {
+            handle_restore_snapshot(ctx, target_version).await
+        }
     }
 }
 
@@ -172,7 +174,7 @@ async fn handle_unlock(ctx: Context, password: String) -> Response {
     }
 
     info!("Vault already exists, attempting to load...");
-    match storage.load_vault(&password) {
+    match storage.load_vault(&password, None) {
         Ok(vault) => {
             let mut st = state.write().await;
             st.vault = Some(vault);
@@ -363,7 +365,88 @@ pub async fn handle_list_snapshots(ctx: &Context) -> Response {
     }
 }
 
-// Essa função não toca no RwLock. Ela apenas opera sobre o dado bruto.
+async fn handle_restore_snapshot(ctx: Context, target_version: u32) -> Response {
+    let mut st = ctx.state.write().await;
+    let password = st.master_password.clone().unwrap();
+
+    if let Some(vault) = &mut st.vault {
+        let snapshot_path = match vault
+            .history
+            .iter()
+            .find(|s| s.version == target_version)
+            .and_then(|s| s.file_ref.as_ref())
+        {
+            Some(path) => path.clone(),
+            None => {
+                return Response::Error(
+                    "The file for this snapshot has expired or does not exist.".into(),
+                );
+            }
+        };
+
+        let entries_to_restore = match ctx.storage.load_snapshot_entries(&password, &snapshot_path)
+        {
+            Ok(entries) => entries,
+            Err(e) => return Response::Error(format!("Fail to load snapshot from disk: {}", e)),
+        };
+
+        let reason = format!("Rollback to v{}", target_version);
+        match ctx
+            .storage
+            .create_backup_file(&vault.entries, vault.version, &password, &reason)
+        {
+            Ok(meta) => vault.history.push(meta),
+            Err(e) => return Response::Error(format!("Safety snapshot failed: {}", e)),
+        }
+
+        vault.restore_entries(entries_to_restore);
+
+        if let Err(e) = ctx.storage.encrypt_and_save_vault(vault, &password) {
+            error!("Fail to save vault after rollback: {}", e);
+            return Response::Error(format!("Fail to save vault after rollback: {}", e));
+        }
+
+        prune_excess_snapshots(vault);
+
+        Response::Ok(format!("Snapshot restored successfully to 'v{}'", target_version).into())
+    } else {
+        Response::Error("Vault is not loaded.".into())
+    }
+}
+
+// No lock
 fn find_entry_by_id(vault: &Vault, uuid: Uuid) -> Option<Entry> {
     vault.get_entry_by_id(uuid)
+}
+
+fn prune_excess_snapshots(vault: &mut Vault) {
+    let config = DaemonConfig::load_config();
+    if config.max_snapshots == 0 {
+        return;
+    }
+
+    let snapshots: Vec<&mut VaultSnapshot> = vault
+        .history
+        .iter_mut()
+        .filter(|s| s.file_ref.is_some())
+        .collect();
+
+    let over_snaps = snapshots
+        .len()
+        .saturating_sub(config.max_snapshots as usize);
+
+    if over_snaps > 0 {
+        for snap in snapshots.into_iter().take(over_snaps) {
+            if let Some(path) = &snap.file_ref {
+                if let Err(e) = std::fs::remove_file(path) {
+                    warn!(
+                        "Fail to remove snapshot file '{}': {}",
+                        path.display().to_string(),
+                        e
+                    );
+                }
+            }
+            snap.file_ref = None;
+        }
+    }
 }

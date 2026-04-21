@@ -43,6 +43,7 @@ pub enum Request {
     UpdateEntry { entry_ctx: EntryUpdateInput },
     UpdateMasterPassword { new_password: String },
     ListSnapshots,
+    RestoreSnapshot { target_version: u32 },
 }
 
 #[derive(Serialize, Deserialize, Debug)]

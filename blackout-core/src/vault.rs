@@ -25,7 +25,7 @@ pub struct VaultSnapshot {
     pub version: u32,
     pub created_at: DateTime<Local>,
     pub checksum: String,
-    pub file_ref: Option<String>,
+    pub file_ref: Option<std::path::PathBuf>,
 
     #[serde(default)]
     pub reason: String,
@@ -124,6 +124,12 @@ impl Vault {
 
     pub fn get_snapshot_by_version(&self, version: u32) -> Option<VaultSnapshot> {
         self.history.iter().find(|h| h.version == version).cloned()
+    }
+
+    pub fn restore_entries(&mut self, entries: Vec<Entry>) -> bool {
+        self.version += 1;
+        self.entries = entries;
+        true
     }
 }
 
