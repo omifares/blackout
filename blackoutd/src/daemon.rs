@@ -9,6 +9,7 @@ use tokio::sync::RwLock;
 use tokio::time::interval;
 use tracing::{debug, info, warn};
 
+use blackout_core::config::DaemonConfig;
 use blackout_core::storage::Wallet;
 use blackout_core::vault::Vault;
 
@@ -34,13 +35,14 @@ pub struct Daemon {
 
 impl Daemon {
     pub fn new(storage: Arc<Wallet>) -> Self {
+        let config = DaemonConfig::load_config();
         let state = DaemonState {
             vault: None,
             authenticated: false,
             running: true,
             master_password: None,
             last_activity: Instant::now(),
-            auto_lock_timeout: Duration::from_secs(30),
+            auto_lock_timeout: Duration::from_secs(config.auto_lock_timeout),
         };
 
         let uid = unsafe { libc::geteuid() };

@@ -2,6 +2,7 @@ mod app;
 mod events;
 mod ui;
 
+use blackout_core::config::DaemonConfig;
 use blackout_core::ipc::{Request, Response};
 use crossterm::event::{self, Event, KeyCode};
 
@@ -60,11 +61,10 @@ fn run(mut terminal: DefaultTerminal, app: &mut app::App) -> Result<()> {
             events::handle_event(app, key);
         }
 
-        // Check vault status silently after 30s
-        if app.last_interaction.elapsed() < Duration::from_secs(30) {
+        let config = DaemonConfig::load_config();
+        if app.last_interaction.elapsed() < Duration::from_secs(config.auto_lock_timeout) {
             app.check_vault_status();
         } else {
-            // > 30s auto-lock vault
             app.lock_application();
         }
 
