@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::app::{App, AppState, SettingsState, SettingsOption, FieldConfig};
+use crate::app::{App, AppState, FieldConfig, SettingsOption, SettingsState};
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub fn handle_event(app: &mut App, key: KeyEvent) {
@@ -50,17 +50,41 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 }
                 KeyCode::Char('n') => {
                     let fields = vec![
-                        FieldConfig { label: "Service ".into(), is_password: false, show_password: false },
-                        FieldConfig { label: "Username ".into(), is_password: false, show_password: false },
-                        FieldConfig { label: "Password ".into(), is_password: true, show_password: false },
+                        FieldConfig {
+                            label: "Service ".into(),
+                            is_password: false,
+                            show_password: false,
+                        },
+                        FieldConfig {
+                            label: "Username ".into(),
+                            is_password: false,
+                            show_password: false,
+                        },
+                        FieldConfig {
+                            label: "Password ".into(),
+                            is_password: true,
+                            show_password: false,
+                        },
                     ];
                     app.open_form(AppState::NewEntryForm(fields), false);
                 }
                 KeyCode::Char('e') => {
                     let fields = vec![
-                        FieldConfig { label: "Edit Service ".into(), is_password: false, show_password: false },
-                        FieldConfig { label: "Edit Username ".into(), is_password: false, show_password: false },
-                        FieldConfig { label: "Edit Password ".into(), is_password: true, show_password: false },
+                        FieldConfig {
+                            label: "Edit Service ".into(),
+                            is_password: false,
+                            show_password: false,
+                        },
+                        FieldConfig {
+                            label: "Edit Username ".into(),
+                            is_password: false,
+                            show_password: false,
+                        },
+                        FieldConfig {
+                            label: "Edit Password ".into(),
+                            is_password: true,
+                            show_password: false,
+                        },
                     ];
                     app.open_form(AppState::UpdateEntry(fields), true);
                 }
@@ -82,37 +106,47 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 _ => {}
             }
         }
-        AppState::ViewEntry(ref mut view) => {
-            match key.code {
-                KeyCode::Char('x') => {
-                    app.lock_vault();
-                }
-                KeyCode::Backspace => {
-                    app.state = AppState::ConfirmEntryDelete;
-                }
-                KeyCode::Enter => {
-                    if let Some(entry) = &app.detail_entry {
-                        app.copy_to_clipboard(entry.entry.secret.to_string());
-                    }
-                }
-                KeyCode::Char('e') => {
-                    let fields = vec![
-                        FieldConfig { label: "Edit Service ".into(), is_password: false, show_password: false },
-                        FieldConfig { label: "Edit Username ".into(), is_password: false, show_password: false },
-                        FieldConfig { label: "Edit Password ".into(), is_password: true, show_password: false },
-                    ];
-                    app.open_form(AppState::UpdateEntry(fields), true);
-                }
-                KeyCode::F(2) => {
-                    view.show_password = !view.show_password;
-                }
-                KeyCode::Esc => {
-                    app.reset_form();
-                    app.state = AppState::EntriesList;
-                }
-                _ => {}
+        AppState::ViewEntry(ref mut view) => match key.code {
+            KeyCode::Char('x') => {
+                app.lock_vault();
             }
-        }
+            KeyCode::Backspace => {
+                app.state = AppState::ConfirmEntryDelete;
+            }
+            KeyCode::Enter => {
+                if let Some(entry) = &app.detail_entry {
+                    app.copy_to_clipboard(entry.entry.secret.to_string());
+                }
+            }
+            KeyCode::Char('e') => {
+                let fields = vec![
+                    FieldConfig {
+                        label: "Edit Service ".into(),
+                        is_password: false,
+                        show_password: false,
+                    },
+                    FieldConfig {
+                        label: "Edit Username ".into(),
+                        is_password: false,
+                        show_password: false,
+                    },
+                    FieldConfig {
+                        label: "Edit Password ".into(),
+                        is_password: true,
+                        show_password: false,
+                    },
+                ];
+                app.open_form(AppState::UpdateEntry(fields), true);
+            }
+            KeyCode::F(2) => {
+                view.show_password = !view.show_password;
+            }
+            KeyCode::Esc => {
+                app.reset_form();
+                app.state = AppState::EntriesList;
+            }
+            _ => {}
+        },
 
         AppState::ConfirmEntryDelete => match key.code {
             KeyCode::Char('y') | KeyCode::Enter => {
@@ -123,49 +157,47 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 app.state = AppState::EntriesList;
             }
             _ => {}
-        }
+        },
 
-        AppState::NewEntryForm(ref mut fields) |
-        AppState::UpdateEntry(ref mut fields) |
-        AppState::ChangeMasterPassword(ref mut fields) => {
-            match key.code {
-                KeyCode::Tab => {
-                    app.current_field = (app.current_field + 1) % fields.len();
-                }
-                KeyCode::BackTab => {
-                    if app.current_field == 0 {
-                        app.current_field = fields.len() - 1;
-                    } else {
-                        app.current_field -= 1;
-                    }
-                }
-                KeyCode::Char(c) => {
-                    if let Some(field_text) = app.form_fields.get_mut(app.current_field) {
-                        field_text.push(c);
-                    }
-                }
-                KeyCode::Backspace => {
-                    if let Some(field_text) = app.form_fields.get_mut(app.current_field) {
-                        field_text.pop();
-                    }
-                }
-                KeyCode::F(2)=> {
-                    if let Some(field) = fields.get_mut(app.current_field) {
-                        if field.is_password {
-                            field.show_password = !field.show_password;
-                        }
-                    }
-                }
-                KeyCode::Enter => {
-                    app.submit_form();
-                }
-                KeyCode::Esc => {
-                    app.reset_form();
-                    app.state = AppState::EntriesList;
-                }
-                _ => {}
+        AppState::NewEntryForm(ref mut fields)
+        | AppState::UpdateEntry(ref mut fields)
+        | AppState::ChangeMasterPassword(ref mut fields) => match key.code {
+            KeyCode::Tab => {
+                app.current_field = (app.current_field + 1) % fields.len();
             }
-        }
+            KeyCode::BackTab => {
+                if app.current_field == 0 {
+                    app.current_field = fields.len() - 1;
+                } else {
+                    app.current_field -= 1;
+                }
+            }
+            KeyCode::Char(c) => {
+                if let Some(field_text) = app.form_fields.get_mut(app.current_field) {
+                    field_text.push(c);
+                }
+            }
+            KeyCode::Backspace => {
+                if let Some(field_text) = app.form_fields.get_mut(app.current_field) {
+                    field_text.pop();
+                }
+            }
+            KeyCode::F(2) => {
+                if let Some(field) = fields.get_mut(app.current_field)
+                    && field.is_password
+                {
+                    field.show_password = !field.show_password;
+                }
+            }
+            KeyCode::Enter => {
+                app.submit_form();
+            }
+            KeyCode::Esc => {
+                app.reset_form();
+                app.state = AppState::EntriesList;
+            }
+            _ => {}
+        },
 
         AppState::Settings(ref mut settings) => match key.code {
             KeyCode::Esc => {
@@ -182,9 +214,21 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                     match settings.options[index] {
                         SettingsOption::ChangeMasterPassword => {
                             let fields = vec![
-                                FieldConfig { label: "Current Password ".into(), is_password: true, show_password: false },
-                                FieldConfig { label: "New Password ".into(), is_password: true, show_password: false },
-                                FieldConfig { label: "Confirm Password ".into(), is_password: true, show_password: false },
+                                FieldConfig {
+                                    label: "Current Password ".into(),
+                                    is_password: true,
+                                    show_password: false,
+                                },
+                                FieldConfig {
+                                    label: "New Password ".into(),
+                                    is_password: true,
+                                    show_password: false,
+                                },
+                                FieldConfig {
+                                    label: "Confirm Password ".into(),
+                                    is_password: true,
+                                    show_password: false,
+                                },
                             ];
                             app.open_form(AppState::ChangeMasterPassword(fields), false);
                         }
@@ -196,7 +240,7 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 }
             }
             _ => {}
-        }
+        },
 
         AppState::SnapshotList => match key.code {
             KeyCode::Esc => {
@@ -209,6 +253,6 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 app.next_index();
             }
             _ => {}
-        }
+        },
     }
 }

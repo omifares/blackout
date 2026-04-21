@@ -1,6 +1,5 @@
 // blackout-daemon/src/daemon.rs
 use anyhow::Result;
-use libc;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -34,7 +33,6 @@ pub struct Daemon {
 }
 
 impl Daemon {
-
     pub fn new(storage: Arc<Wallet>) -> Self {
         let state = DaemonState {
             vault: None,
@@ -51,8 +49,8 @@ impl Daemon {
         Self {
             storage,
             state: Arc::new(RwLock::new(state)),
-            socket_path: socket_path,
-            uid: uid,
+            socket_path,
+            uid,
         }
     }
 
@@ -66,7 +64,7 @@ impl Daemon {
             let old_umask = unsafe { libc::umask(0o077) };
             let bind_result = UnixListener::bind(&self.socket_path);
             unsafe { libc::umask(old_umask) };
-            bind_result? 
+            bind_result?
         };
 
         let mut check_interval = interval(Duration::from_millis(500));
@@ -106,8 +104,8 @@ impl Daemon {
                         let mut buf_reader = BufReader::new(reader);
                         let mut line = String::new();
 
-                        if let Ok(bytes_read) = buf_reader.read_line(&mut line).await {
-                            if bytes_read > 0 {
+                        if let Ok(bytes_read) = buf_reader.read_line(&mut line).await
+                            && bytes_read > 0 {
                                 use blackout_core::ipc::{Request, Response};
 
                                 let response = match serde_json::from_str::<Request>(&line) {
@@ -120,8 +118,7 @@ impl Daemon {
 
                                 let res_json = serde_json::to_string(&response).unwrap() + "\n";
                                 let _ = writer.write_all(res_json.as_bytes()).await;
-                            }
-                        };
+                            };
                     });
                 }
             }

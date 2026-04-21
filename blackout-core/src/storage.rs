@@ -1,16 +1,16 @@
-use crate::vault::{Vault, Entry, VaultSnapshot, derive_key_argon2id};
+use crate::vault::{Entry, Vault, VaultSnapshot, derive_key_argon2id};
 use chacha20poly1305::XChaCha20Poly1305;
 use chacha20poly1305::XNonce;
 use chacha20poly1305::aead::{Aead, KeyInit, OsRng};
+use chrono::Local;
 use rand::RngCore;
 use serde_cbor;
+use sha2::{Digest, Sha256};
 use std::error::Error;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::result::Result;
-use sha2::{Sha256, Digest};
-use chrono::{Local};
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct EncryptedVault {
@@ -132,7 +132,7 @@ impl Wallet {
         let file_name = format!("v{}.blackout.bak", version);
         let file_path = snapshots_dir.join(&file_name);
         let temp_file_name = file_name + ".tmp";
-        let temp_path= snapshots_dir.join(&temp_file_name);
+        let temp_path = snapshots_dir.join(&temp_file_name);
 
         // Serialize
         let serialized = serde_cbor::to_vec(entries)?;
@@ -177,7 +177,7 @@ impl Wallet {
     pub fn update_vault_password(
         &self,
         current_passsword: String,
-        new_password: String
+        new_password: String,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let vault = self.load_vault(&current_passsword)?;
         self.encrypt_and_save_vault(&vault, &new_password)?;

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use std::path::PathBuf;
+use uuid::Uuid;
 
 use crate::vault::{Entry, VaultSnapshot};
 
@@ -34,28 +34,14 @@ pub struct VaultSnapshotPayload {
 pub enum Request {
     Ping,
     Lock,
-    Unlock {
-        master_password: String,
-    },
-    AddEntry {
-        entry_ctx: EntryInput,
-    },
+    Unlock { master_password: String },
+    AddEntry { entry_ctx: EntryInput },
     ListEntries,
-    GetEntry {
-        service: String,
-    },
-    GetEntryById {
-        uuid: uuid::Uuid,
-    },
-    DeleteEntry {
-        uuid: uuid::Uuid,
-    },
-    UpdateEntry {
-        entry_ctx: EntryUpdateInput,
-    },
-    UpdateMasterPassword {
-        new_password: String,
-    },
+    GetEntry { service: String },
+    GetEntryById { uuid: uuid::Uuid },
+    DeleteEntry { uuid: uuid::Uuid },
+    UpdateEntry { entry_ctx: EntryUpdateInput },
+    UpdateMasterPassword { new_password: String },
     ListSnapshots,
 }
 
@@ -67,8 +53,8 @@ pub enum Response {
 
 pub fn get_socket_path() -> PathBuf {
     let uid = unsafe { libc::geteuid() };
-    let base_dir = std::env::var("XDG_RUNTIME_DIR")
-        .unwrap_or_else(|_| format!("/run/user/{}", uid));
+    let base_dir =
+        std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| format!("/run/user/{}", uid));
 
     PathBuf::from(base_dir).join("blackout.sock")
 }

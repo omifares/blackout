@@ -1,12 +1,14 @@
-use blackout_core::ipc::{EntryInput, EntryUpdateInput, Request, Response, VaultListPayload, VaultSnapshotPayload};
+use blackout_core::ipc::{
+    EntryInput, EntryUpdateInput, Request, Response, VaultListPayload, VaultSnapshotPayload,
+};
 use blackout_core::vault::{Entry, VaultSnapshot};
 
 use chrono::{DateTime, Local};
 
-use ratatui::widgets::{TableState, ListState};
+use ratatui::widgets::{ListState, TableState};
 
-use std::process::{Command, Stdio};
 use std::io::Write;
+use std::process::{Command, Stdio};
 use std::time::Instant;
 
 pub struct SnapshotView {
@@ -93,9 +95,9 @@ pub enum AppState {
     UnlockPrompt,
     VaultLocked,
     EntriesList,
-    NewEntryForm(Vec<FieldConfig>, ),
+    NewEntryForm(Vec<FieldConfig>),
     ViewEntry(DetailEntryView),
-    UpdateEntry(Vec<FieldConfig>, ),
+    UpdateEntry(Vec<FieldConfig>),
     ConfirmEntryDelete,
     Settings(SettingsState),
     ChangeMasterPassword(Vec<FieldConfig>),
@@ -107,7 +109,7 @@ pub struct App {
     pub vault_unlocked: bool,
     pub entries: Vec<Entry>,
     pub detail_entry: Option<DetailEntryView>,
-    pub input_buffer: String,     // For password input
+    pub input_buffer: String, // For password input
     pub table_state: TableState,
     pub status_message: Option<String>,
     pub status_time: Option<Instant>,
@@ -222,7 +224,7 @@ impl App {
             }
             Ok(Response::Error(e)) => {
                 self.vault_unlocked = false;
-                self.set_status(format!("{}", e).into());
+                self.set_status(e.to_string());
                 self.state = AppState::UnlockPrompt;
             }
             Err(_) => {}
@@ -279,16 +281,19 @@ impl App {
     pub fn cal_max_index(&mut self) -> usize {
         let mut max_index = 0;
         match &self.state {
-            AppState::EntriesList => { max_index = self.entries.len() }
-            AppState::SnapshotList => { max_index = self.snapshots.len() }
+            AppState::EntriesList => max_index = self.entries.len(),
+            AppState::SnapshotList => max_index = self.snapshots.len(),
             _ => {}
         }
 
-        return max_index
+        max_index
     }
 
     pub fn get_input_for_field(&self, index: usize) -> &str {
-        self.form_fields.get(index).map(|s| s.as_str()).unwrap_or("")
+        self.form_fields
+            .get(index)
+            .map(|s| s.as_str())
+            .unwrap_or("")
     }
 
     pub fn submit_form_update(&mut self) {
@@ -304,7 +309,7 @@ impl App {
         let password = &self.form_fields[2];
 
         let entry_ctx = EntryUpdateInput {
-            uuid: uuid.clone(),
+            uuid,
             service: Some(service.clone()),
             username: Some(user.clone()),
             password: Some(password.clone()),
@@ -366,7 +371,7 @@ impl App {
         }
 
         match crate::send_command(Request::UpdateMasterPassword {
-            new_password: new.clone()
+            new_password: new.clone(),
         }) {
             Ok(Response::Ok(_)) => {
                 self.state = AppState::EntriesList;
@@ -380,9 +385,9 @@ impl App {
 
     pub fn submit_form(&mut self) {
         match &self.state {
-            AppState::NewEntryForm(_) => { self.submit_form_add() }
-            AppState::UpdateEntry(_) => { self.submit_form_update() }
-            AppState::ChangeMasterPassword(_) => { self.submit_form_update_master_password() }
+            AppState::NewEntryForm(_) => self.submit_form_add(),
+            AppState::UpdateEntry(_) => self.submit_form_update(),
+            AppState::ChangeMasterPassword(_) => self.submit_form_update_master_password(),
             _ => {}
         }
     }
@@ -390,7 +395,9 @@ impl App {
     fn log_error(&mut self, action: &str, err: String) {
         let debug_info = format!(
             "{} Error: {}\nData: {}",
-            action, err, self.form_fields.join(",")
+            action,
+            err,
+            self.form_fields.join(",")
         );
         let _ = std::fs::write("blackout_debug.txt", debug_info);
         self.set_status(format!("{} failed. Check debug log.", action));
@@ -411,7 +418,7 @@ impl App {
         };
 
         let uuid = entry.id;
-        match crate::send_command(Request::DeleteEntry { uuid: uuid }) {
+        match crate::send_command(Request::DeleteEntry { uuid }) {
             Ok(Response::Ok(_)) => {
                 self.load_entries();
                 self.state = AppState::EntriesList;

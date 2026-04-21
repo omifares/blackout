@@ -42,9 +42,10 @@ fn run(mut terminal: DefaultTerminal, app: &mut app::App) -> Result<()> {
         terminal.draw(|frame| ui::render(frame, app))?;
 
         // Pulling
-        if event::poll(Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                if key.code == KeyCode::Esc // Handling ESC to exit
+        if event::poll(Duration::from_millis(100))?
+            && let Event::Key(key) = event::read()?
+        {
+            if key.code == KeyCode::Esc // Handling ESC to exit
                     && matches!(
                         app.state,
                         app::AppState::InitialCheck
@@ -52,26 +53,26 @@ fn run(mut terminal: DefaultTerminal, app: &mut app::App) -> Result<()> {
                             | app::AppState::EntriesList
                             | app::AppState::VaultLocked
                     )
-                {
-                    break;
-                }
-
-                events::handle_event(app, key);
+            {
+                break;
             }
+
+            events::handle_event(app, key);
         }
 
         // Check vault status silently after 30s
         if app.last_interaction.elapsed() < Duration::from_secs(30) {
             app.check_vault_status();
-        } else { // > 30s auto-lock vault
+        } else {
+            // > 30s auto-lock vault
             app.lock_application();
         }
 
-        if let Some(time) = app.status_time {
-            if time.elapsed() >= Duration::from_secs(4) {
-                app.status_message = None;
-                app.status_time = None;
-            }
+        if let Some(time) = app.status_time
+            && time.elapsed() >= Duration::from_secs(4)
+        {
+            app.status_message = None;
+            app.status_time = None;
         }
     }
     Ok(())

@@ -5,9 +5,11 @@ use tokio::sync::RwLock;
 use tracing::debug;
 use uuid::Uuid;
 
-use blackout_core::ipc::{EntryInput, EntryUpdateInput, Request, Response, VaultListPayload, VaultSnapshotPayload};
+use blackout_core::ipc::{
+    EntryInput, EntryUpdateInput, Request, Response, VaultListPayload, VaultSnapshotPayload,
+};
 use blackout_core::storage::Wallet;
-use blackout_core::vault::{Vault, Entry};
+use blackout_core::vault::{Entry, Vault};
 
 use crate::daemon::DaemonState;
 
@@ -35,10 +37,10 @@ fn needs_auth(req: &Request) -> bool {
 fn is_mutation(req: &Request) -> bool {
     matches!(
         req,
-        Request::AddEntry { .. } |
-        Request::UpdateEntry { .. } |
-        Request::DeleteEntry { .. } |
-        Request::UpdateMasterPassword { .. }
+        Request::AddEntry { .. }
+            | Request::UpdateEntry { .. }
+            | Request::DeleteEntry { .. }
+            | Request::UpdateMasterPassword { .. }
     )
 }
 
@@ -72,8 +74,8 @@ pub async fn process_request(
 
         // Create snapshot
         let reason = match &req {
-            Request::AddEntry{ entry_ctx } => format!("Add entry: {}", entry_ctx.service).into(),
-            Request::DeleteEntry{ uuid } => {
+            Request::AddEntry { entry_ctx } => format!("Add entry: {}", entry_ctx.service),
+            Request::DeleteEntry { uuid } => {
                 let entry_name = if let Some(vault) = &st.vault {
                     find_entry_by_id(vault, *uuid)
                         .map(|e| e.service.clone())
@@ -81,11 +83,14 @@ pub async fn process_request(
                 } else {
                     "Unknown".to_string()
                 };
-                format!("Delete entry: {}", entry_name).into()
+                format!("Delete entry: {}", entry_name)
             }
-            Request::UpdateEntry{ entry_ctx } => format!("Update entry: {}", entry_ctx.service.as_deref().unwrap_or("Unknown")).into(),
+            Request::UpdateEntry { entry_ctx } => format!(
+                "Update entry: {}",
+                entry_ctx.service.as_deref().unwrap_or("Unknown")
+            ),
             Request::UpdateMasterPassword { .. } => "Master password rotation".to_string(),
-            _ => { "Unknown reason".into() }
+            _ => "Unknown reason".into(),
         };
 
         let password = match st.master_password.clone() {
@@ -94,10 +99,13 @@ pub async fn process_request(
         };
 
         if let Some(vault) = &mut st.vault {
-            match ctx.storage.create_backup_file(&vault.entries, vault.version, &password, reason) {
+            match ctx
+                .storage
+                .create_backup_file(&vault.entries, vault.version, &password, reason)
+            {
                 Ok(meta) => {
                     vault.history.push(meta);
-                },
+                }
                 Err(e) => return Response::Error(format!("Snapshot failed: {}", e)),
             }
         }
@@ -113,15 +121,14 @@ pub async fn process_request(
         Request::GetEntryById { uuid } => handle_get_entry_by_id(uuid, ctx.state).await,
         Request::DeleteEntry { uuid } => handle_delete_entry(ctx, uuid).await,
         Request::UpdateEntry { entry_ctx } => handle_update_entry(ctx, entry_ctx).await,
-        Request::UpdateMasterPassword { new_password } => handle_update_master_password(ctx, new_password ).await,
+        Request::UpdateMasterPassword { new_password } => {
+            handle_update_master_password(ctx, new_password).await
+        }
         Request::ListSnapshots => handle_list_snapshots(&ctx).await,
     }
 }
 
-async fn handle_unlock(
-    ctx: Context,
-    password: String,
-) -> Response {
+async fn handle_unlock(ctx: Context, password: String) -> Response {
     let storage = ctx.storage;
     let state = ctx.state;
 
@@ -165,10 +172,7 @@ async fn handle_lock(state: Arc<RwLock<DaemonState>>) -> Response {
     Response::Ok("Vault locked and memory cleared".into())
 }
 
-async fn handle_add_entry(
-    ctx: Context,
-    entry_ctx: EntryInput,
-) -> Response {
+async fn handle_add_entry(ctx: Context, entry_ctx: EntryInput) -> Response {
     let mut st = ctx.state.write().await;
     let password = st.master_password.clone().unwrap();
 
@@ -188,7 +192,6 @@ pub async fn handle_list_entries(ctx: &Context) -> Response {
     let st = ctx.state.read().await;
 
     if let Some(vault) = &st.vault {
-
         let payload = VaultListPayload {
             entries: vault.entries.clone(),
             version: vault.version,
@@ -246,10 +249,7 @@ async fn handle_get_entry_by_id(uuid: Uuid, state: Arc<RwLock<DaemonState>>) -> 
     }
 }
 
-async fn handle_delete_entry(
-    ctx: Context,
-    uuid: uuid::Uuid,
-) -> Response {
+async fn handle_delete_entry(ctx: Context, uuid: uuid::Uuid) -> Response {
     let mut st = ctx.state.write().await;
 
     let password = st.master_password.clone();
@@ -281,15 +281,17 @@ async fn handle_delete_entry(
     }
 }
 
-async fn handle_update_entry(
-    ctx: Context,
-    entry_ctx: EntryUpdateInput,
-) -> Response {
+async fn handle_update_entry(ctx: Context, entry_ctx: EntryUpdateInput) -> Response {
     let mut st: tokio::sync::RwLockWriteGuard<'_, DaemonState> = ctx.state.write().await;
 
     let password = st.master_password.clone();
     if let Some(vault) = &mut st.vault {
-        vault.update_entry(entry_ctx.uuid, entry_ctx.service, entry_ctx.username, entry_ctx.password);
+        vault.update_entry(
+            entry_ctx.uuid,
+            entry_ctx.service,
+            entry_ctx.username,
+            entry_ctx.password,
+        );
         if let Some(p) = password.as_ref()
             && let Err(e) = ctx.storage.encrypt_and_save_vault(vault, p)
         {
@@ -303,10 +305,7 @@ async fn handle_update_entry(
     }
 }
 
-async fn handle_update_master_password(
-    ctx: Context,
-    new_password: String
-) -> Response {
+async fn handle_update_master_password(ctx: Context, new_password: String) -> Response {
     let mut st = ctx.state.write().await;
 
     let Some(password) = st.master_password.clone() else {
@@ -328,7 +327,6 @@ pub async fn handle_list_snapshots(ctx: &Context) -> Response {
     let st = ctx.state.read().await;
 
     if let Some(vault) = &st.vault {
-
         let payload = VaultSnapshotPayload {
             snapshots: vault.get_snapshots().clone(),
         };

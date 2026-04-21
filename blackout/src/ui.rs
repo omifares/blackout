@@ -1,4 +1,4 @@
-use ratatui::widgets::{Block, Cell, Paragraph, Row, Table, ListItem, List};
+use ratatui::widgets::{Block, Cell, List, ListItem, Paragraph, Row, Table};
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
@@ -6,13 +6,17 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::app::{App, AppState, DetailEntryView, EntryView, ListEntryView, FieldConfig, SnapshotView};
+use crate::app::{
+    App, AppState, DetailEntryView, EntryView, FieldConfig, ListEntryView, SnapshotView,
+};
 
 fn is_cursor_visible() -> bool {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_millis() % 1000 < 500 // interval: 500ms
+        .as_millis()
+        % 1000
+        < 500 // interval: 500ms
 }
 
 pub fn render(frame: &mut Frame, app: &mut App) {
@@ -28,24 +32,29 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     .vertical_margin(1);
     let [top, main, status_area, bottom] = frame.area().layout(&vertical);
 
-    frame.render_widget(Line::from(Span::from(format!("Blackout - v{version}")).bold()).centered(), top);
+    frame.render_widget(
+        Line::from(Span::from(format!("Blackout - v{version}")).bold()).centered(),
+        top,
+    );
 
     match &app.state {
         AppState::InitialCheck => render_initial_check(frame, main),
         AppState::UnlockPrompt => render_unlock_prompt(frame, main, &app.input_buffer),
         AppState::VaultLocked => render_locked_vault(frame, main),
         AppState::EntriesList => render_entries_list(frame, main, app),
-        AppState::NewEntryForm(fields) => render_form(frame, main, "New entry", &fields, app),
-        AppState::UpdateEntry(fields) => render_form(frame, main, "Edit entry", &fields, app),
+        AppState::NewEntryForm(fields) => render_form(frame, main, "New entry", fields, app),
+        AppState::UpdateEntry(fields) => render_form(frame, main, "Edit entry", fields, app),
         AppState::ViewEntry(view) => render_view_entry(frame, main, app, view),
         AppState::ConfirmEntryDelete => render_delete_confirmation(frame, main),
         AppState::Settings(_) => render_settings(frame, main, app),
-        AppState::ChangeMasterPassword(fields) => render_form(frame, main, "Change Master Password", &fields, app),
+        AppState::ChangeMasterPassword(fields) => {
+            render_form(frame, main, "Change Master Password", fields, app)
+        }
         AppState::SnapshotList => render_snapshot_list(frame, main, app),
     }
 
     // Status & Footer
-    frame.render_widget(get_status_text(&app).centered(), status_area);
+    frame.render_widget(get_status_text(app).centered(), status_area);
     frame.render_widget(get_helper_text(&app.state).centered(), bottom);
 }
 
@@ -57,7 +66,9 @@ fn get_helper_text(state: &AppState) -> Line<'static> {
         AppState::EntriesList => {
             "(Esc) Quit | (e) Edit | (↵) Select | (⌫) Delete | (n) New | (x) Lock | (?) Options "
         }
-        AppState::NewEntryForm(_) | AppState::UpdateEntry(_) | AppState::ChangeMasterPassword(_) => {
+        AppState::NewEntryForm(_)
+        | AppState::UpdateEntry(_)
+        | AppState::ChangeMasterPassword(_) => {
             "(Esc) Back | (Tab) Next field | (BackTab) Prev field | (↵) Submit"
         }
         AppState::ViewEntry(_) => {
@@ -85,8 +96,8 @@ fn render_form(f: &mut Frame, area: Rect, title: &str, fields: &[FieldConfig], a
     let mut lines = Vec::new();
 
     lines.push(Line::from(Span::styled(
-        format!("{}", title.to_uppercase()),
-        Style::default().bold()
+        title.to_uppercase().to_string(),
+        Style::default().bold(),
     )));
     lines.push(Line::from(""));
 
@@ -245,23 +256,22 @@ fn render_delete_confirmation(frame: &mut Frame, area: Rect) {
 
 fn render_settings(frame: &mut Frame, area: Rect, app: &mut App) {
     let [title_area, list_area] = area
-            .centered(Constraint::Percentage(50), Constraint::Percentage(50))
-            .layout(&Layout::vertical([Constraint::Percentage(20), Constraint::Percentage(80)]));
-
+        .centered(Constraint::Percentage(50), Constraint::Percentage(50))
+        .layout(&Layout::vertical([
+            Constraint::Percentage(20),
+            Constraint::Percentage(80),
+        ]));
 
     if let AppState::Settings(ref mut settings) = app.state {
-        let items: Vec<ListItem> = settings.options
+        let items: Vec<ListItem> = settings
+            .options
             .iter()
             .map(|opt| ListItem::new(opt.as_str()))
             .collect();
 
-        let list = List::new(items)
-            .highlight_symbol("|");
+        let list = List::new(items).highlight_symbol("|");
 
-        frame.render_widget(
-                Paragraph::new("Settings").centered(),
-                title_area,
-            );
+        frame.render_widget(Paragraph::new("Settings").centered(), title_area);
         frame.render_stateful_widget(list, list_area, &mut settings.list_state);
     }
 }
@@ -276,10 +286,14 @@ fn render_snapshot_list(frame: &mut Frame, area: Rect, app: &mut App) {
                 version: shot.version,
                 created_at: shot.created_at,
                 checksum: shot.checksum.clone(),
-                reason: shot.reason.clone()
+                reason: shot.reason.clone(),
             };
 
-            let display_hash = shot_view.checksum.get(..7).unwrap_or(&shot_view.checksum).to_string();
+            let display_hash = shot_view
+                .checksum
+                .get(..7)
+                .unwrap_or(&shot_view.checksum)
+                .to_string();
 
             Row::new(vec![
                 Cell::from(shot_view.version.to_string()),

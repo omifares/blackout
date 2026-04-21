@@ -47,14 +47,14 @@ impl Vault {
             service,
             username: user,
             secret: pass,
-            updated_at: Local::now()
+            updated_at: Local::now(),
         };
         self.entries.push(new_entry);
         self.version += 1;
     }
 
     pub fn list_entries(&self) -> Vec<Entry> {
-        self.entries.iter().cloned().collect()
+        self.entries.to_vec()
     }
 
     // Get entry by service name (returns all matches)
@@ -66,18 +66,13 @@ impl Vault {
             .collect()
     }
 
-    pub fn get_entry_by_id(
-        &self,
-        id: Uuid,
-    ) -> Option<Entry> {
-        self.entries.iter().find(|e| e.id == id).map(|e| {
-            Entry {
-                id: e.id,
-                service: e.service.clone(),
-                username: e.username.clone(),
-                secret: e.secret.clone(),
-                updated_at: e.updated_at,
-            }
+    pub fn get_entry_by_id(&self, id: Uuid) -> Option<Entry> {
+        self.entries.iter().find(|e| e.id == id).map(|e| Entry {
+            id: e.id,
+            service: e.service.clone(),
+            username: e.username.clone(),
+            secret: e.secret.clone(),
+            updated_at: e.updated_at,
         })
     }
 
@@ -124,13 +119,12 @@ impl Vault {
     }
 
     pub fn get_snapshots(&self) -> Vec<VaultSnapshot> {
-        self.history.iter().cloned().collect()
+        self.history.to_vec()
     }
 
     pub fn get_snapshot_by_version(&self, version: u32) -> Option<VaultSnapshot> {
         self.history.iter().find(|h| h.version == version).cloned()
     }
-
 }
 
 /// Derive a key from a password using Argon2id.
