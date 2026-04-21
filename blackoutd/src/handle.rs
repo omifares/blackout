@@ -2,7 +2,7 @@ use serde_json::json;
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
-use tracing::{debug, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use blackout_core::config::DaemonConfig;
@@ -204,6 +204,7 @@ async fn handle_add_entry(ctx: Context, entry_ctx: EntryInput) -> Response {
         vault.add_entry(entry_ctx.service, entry_ctx.username, entry_ctx.password);
 
         if let Err(e) = ctx.storage.encrypt_and_save_vault(vault, &password) {
+            error!("Failed to save vault after adding entry: {}", e);
             return Response::Error(format!("Save failed: {}", e));
         }
         Response::Ok("Entry added".into())
@@ -240,7 +241,7 @@ async fn handle_get_entry(service: String, state: Arc<RwLock<DaemonState>>) -> R
         if !entries.is_empty() {
             Response::Ok(format!("{:?}", entries))
         } else {
-            error!("No entry found for service: {}", service);
+            debug!("No entry found for service: {}", service);
             Response::Error(format!("No entry found for service: {}", service))
         }
     } else {
