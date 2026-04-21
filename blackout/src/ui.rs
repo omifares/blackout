@@ -6,7 +6,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::app::{App, AppState, DetailEntryView, EntryView, ListEntryView, FieldConfig};
+use crate::app::{App, AppState, DetailEntryView, EntryView, ListEntryView, FieldConfig, SnapshotView};
 
 fn is_cursor_visible() -> bool {
     std::time::SystemTime::now()
@@ -41,6 +41,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         AppState::ConfirmEntryDelete => render_delete_confirmation(frame, main),
         AppState::Settings(_) => render_settings(frame, main, app),
         AppState::ChangeMasterPassword(fields) => render_form(frame, main, "Change Master Password", &fields, app),
+        AppState::SnapshotList => render_snapshot_list(frame, main, app),
     }
 
     // Status & Footer
@@ -50,7 +51,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
 fn get_helper_text(state: &AppState) -> Line<'static> {
     let text = match state {
-        AppState::InitialCheck => "(Esc) Quit",
+        AppState::InitialCheck | AppState::SnapshotList => "(Esc) Quit",
         AppState::UnlockPrompt => "(↵) Submit | (Esc) Quit",
         AppState::VaultLocked => "(Esc) Quit | (any) Unlock vault",
         AppState::EntriesList => {
@@ -263,4 +264,44 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &mut App) {
             );
         frame.render_stateful_widget(list, list_area, &mut settings.list_state);
     }
+}
+
+fn render_snapshot_list(frame: &mut Frame, area: Rect, app: &mut App) {
+    let rows: Vec<Row> = app
+        .snapshots
+        .iter()
+        .map(|shot| {
+            let shot_view = SnapshotView {
+                version: shot.version,
+                created_at: shot.created_at,
+                checksum: shot.checksum.clone(),
+                reason: shot.reason.clone()
+            };
+
+            Row::new(vec![
+                Cell::from(shot_view.version.to_string()),
+                Cell::from(shot_view.checksum.to_string()),
+                Cell::from(shot_view.created_at.format("%Y-%m-%d %H:%M").to_string()),
+                Cell::from(shot_view.reason.to_string()),
+            ])
+        })
+        .collect();
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Percentage(10),
+            Constraint::Percentage(30),
+            Constraint::Percentage(20),
+            Constraint::Fill(1),
+        ],
+    )
+    .header(
+        Row::new(vec!["version", "Checksum", "Created at", "Reason"])
+            .style(Style::new().bold().underlined()),
+    )
+    .style(Style::new().bold())
+    .highlight_symbol("|");
+
+    frame.render_stateful_widget(table, area, &mut app.table_state);
 }

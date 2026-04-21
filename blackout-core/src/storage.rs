@@ -10,6 +10,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::result::Result;
 use sha2::{Sha256, Digest};
+use chrono::{Local};
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct EncryptedVault {
@@ -121,6 +122,7 @@ impl Wallet {
         entries: &Vec<Entry>,
         version: u32,
         password: &str,
+        reason: String,
     ) -> Result<VaultSnapshot, Box<dyn Error + Send + Sync>> {
         let snapshots_dir = self.path.join(".snapshots");
         if !snapshots_dir.exists() {
@@ -165,8 +167,9 @@ impl Wallet {
 
         Ok(VaultSnapshot {
             version,
-            timestamp: chrono::Utc::now().timestamp(),
+            created_at: Local::now(),
             checksum,
+            reason,
             file_ref: file_path.to_string_lossy().into_owned(),
         })
     }

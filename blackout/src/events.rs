@@ -168,32 +168,41 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
         }
 
         AppState::Settings(ref mut settings) => match key.code {
-                KeyCode::Esc => {
-                    app.state = AppState::EntriesList;
-                }
-                KeyCode::Up => {
-                    settings.list_state.select_previous();
-                }
-                KeyCode::Down => {
-                    settings.list_state.select_next();
-                }
-                KeyCode::Enter => {
-                    if let Some(index) = settings.list_state.selected() {
-                        match settings.options[index] {
-                            SettingsOption::ChangeMasterPassword => {
-                                let fields = vec![
-                                    FieldConfig { label: "Current Password ".into(), is_password: true, show_password: false },
-                                    FieldConfig { label: "New Password ".into(), is_password: true, show_password: false },
-                                    FieldConfig { label: "Confirm Password ".into(), is_password: true, show_password: false },
-                                ];
-                                app.open_form(AppState::ChangeMasterPassword(fields), false);
-                            }
-                            _ => {}
+            KeyCode::Esc => {
+                app.state = AppState::EntriesList;
+            }
+            KeyCode::Up => {
+                settings.list_state.select_previous();
+            }
+            KeyCode::Down => {
+                settings.list_state.select_next();
+            }
+            KeyCode::Enter => {
+                if let Some(index) = settings.list_state.selected() {
+                    match settings.options[index] {
+                        SettingsOption::ChangeMasterPassword => {
+                            let fields = vec![
+                                FieldConfig { label: "Current Password ".into(), is_password: true, show_password: false },
+                                FieldConfig { label: "New Password ".into(), is_password: true, show_password: false },
+                                FieldConfig { label: "Confirm Password ".into(), is_password: true, show_password: false },
+                            ];
+                            app.open_form(AppState::ChangeMasterPassword(fields), false);
+                        }
+                        SettingsOption::SnapshotList => {
+                            app.load_snapshots();
+                            app.state = AppState::SnapshotList
                         }
                     }
                 }
-                _ => {}
             }
+            _ => {}
+        }
 
+        AppState::SnapshotList => match key.code {
+            KeyCode::Esc => {
+                app.state = AppState::Settings(SettingsState::default());
+            }
+            _ => {}
+        }
     }
 }

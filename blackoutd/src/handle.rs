@@ -5,9 +5,9 @@ use tokio::sync::RwLock;
 use tracing::debug;
 use uuid::Uuid;
 
-use blackout_core::ipc::{EntryInput, EntryUpdateInput, Request, Response, VaultListPayload};
+use blackout_core::ipc::{EntryInput, EntryUpdateInput, Request, Response, VaultListPayload, VaultSnapshotPayload};
 use blackout_core::storage::Wallet;
-use blackout_core::vault::Vault;
+use blackout_core::vault::{Vault, Entry};
 
 use crate::daemon::DaemonState;
 
@@ -71,6 +71,22 @@ pub async fn process_request(
         }
 
         // Create snapshot
+        let reason = match &req {
+            Request::AddEntry{ entry_ctx } => format!("Add entry: {}", entry_ctx.service).into(),
+            Request::DeleteEntry{ uuid } => {
+                let entry_name = if let Some(vault) = &st.vault {
+                    find_entry_by_id(vault, *uuid)
+                        .map(|e| e.service.clone())
+                        .unwrap_or_else(|| "Unknown".to_string())
+                } else {
+                    "Unknown".to_string()
+                };
+                format!("Delete entry: {}", entry_name).into()
+            }
+            Request::UpdateEntry{ entry_ctx } => format!("Update entry: {:?}", entry_ctx.service).into(),
+            Request::UpdateMasterPassword { .. } => "Master password rotation".to_string(),
+            _ => { "Unknown reason".into() }
+        };
 
         let password = match st.master_password.clone() {
             Some(p) => p,
@@ -78,7 +94,7 @@ pub async fn process_request(
         };
 
         if let Some(vault) = &mut st.vault {
-            match ctx.storage.create_backup_file(&vault.entries, vault.version, &password) {
+            match ctx.storage.create_backup_file(&vault.entries, vault.version, &password, reason) {
                 Ok(meta) => {
                     vault.history.push(meta);
                 },
@@ -98,6 +114,7 @@ pub async fn process_request(
         Request::DeleteEntry { uuid } => handle_delete_entry(ctx, uuid).await,
         Request::UpdateEntry { entry_ctx } => handle_update_entry(ctx, entry_ctx).await,
         Request::UpdateMasterPassword { new_password } => handle_update_master_password(ctx, new_password ).await,
+        Request::ListSnapshots => handle_list_snapshots(&ctx).await,
     }
 }
 
@@ -305,4 +322,25 @@ async fn handle_update_master_password(
         Ok(_) => Response::Ok("Master password updated successfully".into()),
         Err(e) => Response::Error(format!("Failed to update master password: {}", e)),
     }
+}
+
+pub async fn handle_list_snapshots(ctx: &Context) -> Response {
+    let st = ctx.state.read().await;
+
+    if let Some(vault) = &st.vault {
+
+        let payload = VaultSnapshotPayload {
+            snapshots: vault.get_snapshots().clone(),
+        };
+
+        let data = serde_json::to_string(&payload).unwrap();
+        Response::Ok(data)
+    } else {
+        Response::Error("Vault is locked".into())
+    }
+}
+
+// Essa função não toca no RwLock. Ela apenas opera sobre o dado bruto.
+fn find_entry_by_id(vault: &Vault, uuid: Uuid) -> Option<Entry> {
+    vault.get_entry_by_id(uuid)
 }

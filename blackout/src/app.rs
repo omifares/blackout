@@ -1,5 +1,5 @@
-use blackout_core::ipc::{EntryInput, EntryUpdateInput, Request, Response, VaultListPayload};
-use blackout_core::vault::Entry;
+use blackout_core::ipc::{EntryInput, EntryUpdateInput, Request, Response, VaultListPayload, VaultSnapshotPayload};
+use blackout_core::vault::{Entry, VaultSnapshot};
 
 use chrono::{DateTime, Local};
 
@@ -8,6 +8,13 @@ use ratatui::widgets::{TableState, ListState};
 use std::process::{Command, Stdio};
 use std::io::Write;
 use std::time::Instant;
+
+pub struct SnapshotView {
+    pub version: u32,
+    pub created_at: DateTime<Local>,
+    pub checksum: String,
+    pub reason: String,
+}
 
 pub trait EntryView {
     fn _id(&self) -> &uuid::Uuid;
@@ -50,16 +57,14 @@ pub struct FieldConfig {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SettingsOption {
     ChangeMasterPassword,
-    A,
-    B,
+    SnapshotList,
 }
 
 impl SettingsOption {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::ChangeMasterPassword => "Change Master Password",
-            Self::A => "Not implemented",
-            Self::B => "Not implemented",
+            Self::SnapshotList => "Snapshots",
         }
     }
 }
@@ -76,8 +81,7 @@ impl Default for SettingsState {
             list_state: ListState::default(),
             options: vec![
                 SettingsOption::ChangeMasterPassword,
-                SettingsOption::A,
-                SettingsOption::B,
+                SettingsOption::SnapshotList,
             ],
         }
     }
@@ -94,7 +98,8 @@ pub enum AppState {
     UpdateEntry(Vec<FieldConfig>, ),
     ConfirmEntryDelete,
     Settings(SettingsState),
-    ChangeMasterPassword(Vec<FieldConfig>, ),
+    ChangeMasterPassword(Vec<FieldConfig>),
+    SnapshotList,
 }
 
 pub struct App {
@@ -106,11 +111,12 @@ pub struct App {
     pub table_state: TableState,
     pub status_message: Option<String>,
     pub last_interaction: Instant,
-    pub last_tick: std::time::Instant,
+    pub _last_tick: std::time::Instant,
     pub vault_version: u32,
     pub form_fields: Vec<String>,
     pub current_field: usize,
     pub obscure_inputs: bool,
+    pub snapshots: Vec<VaultSnapshot>
 }
 
 impl App {
@@ -128,10 +134,11 @@ impl App {
             table_state,
             status_message: None,
             last_interaction: Instant::now(),
-            last_tick: Instant::now(),
+            _last_tick: Instant::now(),
             vault_version: 0,
-            form_fields: vec![String::new(), String::new(), String::new()], // Agora é Vec (Resolve E0308)
+            form_fields: vec![String::new(), String::new(), String::new()],
             obscure_inputs: true,
+            snapshots: vec![],
         }
     }
 
@@ -223,6 +230,20 @@ impl App {
     pub fn load_entries(&mut self) {
         if let Ok(Response::Ok(data)) = crate::send_command(Request::ListEntries) {
             self.parse_entries(&data);
+        }
+    }
+
+    pub fn load_snapshots(&mut self) {
+        if let Ok(Response::Ok(data)) = crate::send_command(Request::ListSnapshots) {
+            match serde_json::from_str::<VaultSnapshotPayload>(&data) {
+                Ok(payload) => {
+                    self.snapshots = payload.snapshots;
+                }
+                Err(e) => {
+                    let debug_info = format!("Parser Error: {}\n\nReceived Data:\n{}", e, data);
+                    let _ = std::fs::write("blackout_debug.txt", debug_info);
+                }
+            }
         }
     }
 

@@ -12,7 +12,7 @@ pub struct Entry {
     pub id: Uuid,
     pub service: String,
     pub username: String,
-    
+
     #[serde(default)]
     pub secret: String,
 
@@ -23,16 +23,19 @@ pub struct Entry {
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct VaultSnapshot {
     pub version: u32,
-    pub timestamp: i64,
+    pub created_at: DateTime<Local>,
     pub checksum: String,
     pub file_ref: String,
+
+    #[serde(default)]
+    pub reason: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Vault {
     pub version: u32,
     pub entries: Vec<Entry>,
-    
+
     #[serde(default)]
     pub history: Vec<VaultSnapshot>,
 }
@@ -66,15 +69,15 @@ impl Vault {
     pub fn get_entry_by_id(
         &self,
         id: Uuid,
-    ) -> Option<(Uuid, String, String, String, DateTime<Local>)> {
+    ) -> Option<Entry> {
         self.entries.iter().find(|e| e.id == id).map(|e| {
-            (
-                e.id,
-                e.service.clone(),
-                e.username.clone(),
-                e.secret.clone(),
-                e.updated_at,
-            )
+            Entry {
+                id: e.id,
+                service: e.service.clone(),
+                username: e.username.clone(),
+                secret: e.secret.clone(),
+                updated_at: e.updated_at,
+            }
         })
     }
 
@@ -118,6 +121,14 @@ impl Vault {
             .iter()
             .find(|e| e.id == id)
             .map(|e| e.secret.clone())
+    }
+
+    pub fn get_snapshots(&self) -> Vec<VaultSnapshot> {
+        self.history.iter().cloned().collect()
+    }
+
+    pub fn get_snapshot_by_version(&self, version: u32) -> Option<VaultSnapshot> {
+        self.history.iter().find(|h| h.version == version).cloned()
     }
 
 }

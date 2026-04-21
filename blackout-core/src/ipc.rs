@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use std::path::PathBuf;
 
-use crate::vault::Entry;
+use crate::vault::{Entry, VaultSnapshot};
 
 // Context
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -23,6 +23,11 @@ pub struct EntryUpdateInput {
 pub struct VaultListPayload {
     pub entries: Vec<Entry>,
     pub version: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct VaultSnapshotPayload {
+    pub snapshots: Vec<VaultSnapshot>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -50,7 +55,8 @@ pub enum Request {
     },
     UpdateMasterPassword {
         new_password: String,
-    }
+    },
+    ListSnapshots,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
