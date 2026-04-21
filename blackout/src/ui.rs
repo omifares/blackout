@@ -270,6 +270,7 @@ fn render_snapshot_list(frame: &mut Frame, area: Rect, app: &mut App) {
     let rows: Vec<Row> = app
         .snapshots
         .iter()
+        .rev()
         .map(|shot| {
             let shot_view = SnapshotView {
                 version: shot.version,

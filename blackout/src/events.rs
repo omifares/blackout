@@ -68,10 +68,10 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                     app.state = AppState::Settings(SettingsState::default());
                 }
                 KeyCode::Up => {
-                    app.prev_entry();
+                    app.prev_index();
                 }
                 KeyCode::Down => {
-                    app.next_entry();
+                    app.next_index();
                 }
                 KeyCode::Backspace => {
                     app.state = AppState::ConfirmEntryDelete;
@@ -201,6 +201,12 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
         AppState::SnapshotList => match key.code {
             KeyCode::Esc => {
                 app.state = AppState::Settings(SettingsState::default());
+            }
+            KeyCode::Up => {
+                app.prev_index();
+            }
+            KeyCode::Down => {
+                app.next_index();
             }
             _ => {}
         }

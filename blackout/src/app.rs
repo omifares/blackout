@@ -255,23 +255,36 @@ impl App {
         }
     }
 
-    pub fn next_entry(&mut self) {
-        if !self.entries.is_empty() {
+    pub fn next_index(&mut self) {
+        let max_index = self.cal_max_index();
+        if max_index > 0 {
             self.table_state.select(Some(
-                (self.table_state.selected().unwrap_or(0) + 1) % self.entries.len(),
+                (self.table_state.selected().unwrap_or(0) + 1) % max_index,
             ));
         }
     }
 
-    pub fn prev_entry(&mut self) {
-        if !self.entries.is_empty() {
+    pub fn prev_index(&mut self) {
+        let max_index = self.cal_max_index();
+        if max_index > 0 {
             let current_index = self.table_state.selected().unwrap_or(0);
             if current_index == 0 {
-                self.table_state.select(Some(self.entries.len() - 1));
+                self.table_state.select(Some(max_index - 1));
             } else {
                 self.table_state.select(Some(current_index - 1));
             }
         }
+    }
+
+    pub fn cal_max_index(&mut self) -> usize {
+        let mut max_index = 0;
+        match &self.state {
+            AppState::EntriesList => { max_index = self.entries.len() }
+            AppState::SnapshotList => { max_index = self.snapshots.len() }
+            _ => {}
+        }
+
+        return max_index
     }
 
     pub fn get_input_for_field(&self, index: usize) -> &str {
