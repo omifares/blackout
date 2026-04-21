@@ -25,7 +25,7 @@ pub struct VaultSnapshot {
     pub version: u32,
     pub created_at: DateTime<Local>,
     pub checksum: String,
-    pub file_ref: String,
+    pub file_ref: Option<String>,
 
     #[serde(default)]
     pub reason: String,

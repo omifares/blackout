@@ -5,12 +5,14 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DaemonConfig {
     pub auto_lock_timeout: u64,
+    pub max_snapshots: usize,
 }
 
 impl Default for DaemonConfig {
     fn default() -> Self {
         Self {
             auto_lock_timeout: 30,
+            max_snapshots: 0, // 0 = unlimited
         }
     }
 }

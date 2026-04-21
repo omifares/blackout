@@ -2,7 +2,7 @@ use serde_json::json;
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
-use tracing::debug;
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use blackout_core::ipc::{
@@ -104,6 +104,29 @@ pub async fn process_request(
                 .create_backup_file(&vault.entries, vault.version, &password, reason)
             {
                 Ok(meta) => {
+                    // Remove old history
+                    let config = DaemonConfig::load_config();
+                    let mut snapshots: Vec<&mut VaultSnapshot> = vault
+                        .history
+                        .iter_mut()
+                        .filter(|s| s.file_ref.is_some())
+                        .collect();
+
+                    if config.max_snapshots > 0 {
+                        let over_snaps = snapshots.len().saturating_sub(config.max_snapshots);
+
+                        if over_snaps > 0 {
+                            for snap in snapshots.iter_mut().take(over_snaps) {
+                                if let Some(path) = &snap.file_ref {
+                                    if let Err(e) = std::fs::remove_file(path) {
+                                        warn!("Fail to remove snapshot file '{}': {}", path, e);
+                                    }
+                                };
+
+                                snap.file_ref = None;
+                            }
+                        }
+                    }
                     vault.history.push(meta);
                 }
                 Err(e) => return Response::Error(format!("Snapshot failed: {}", e)),

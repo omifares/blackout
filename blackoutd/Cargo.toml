@@ -19,3 +19,4 @@ argon2 = "0.5.3"
 uuid = "1.23.0"
 libc = "0.2.184"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+fs = "0.0.5"

@@ -170,7 +170,7 @@ impl Wallet {
             created_at: Local::now(),
             checksum,
             reason,
-            file_ref: file_path.to_string_lossy().into_owned(),
+            file_ref: Some(file_path.to_string_lossy().into_owned()),
         })
     }
 
