@@ -110,13 +110,14 @@ pub struct App {
     pub input_buffer: String,     // For password input
     pub table_state: TableState,
     pub status_message: Option<String>,
+    pub status_time: Option<Instant>,
     pub last_interaction: Instant,
     pub _last_tick: std::time::Instant,
     pub vault_version: u32,
     pub form_fields: Vec<String>,
     pub current_field: usize,
     pub obscure_inputs: bool,
-    pub snapshots: Vec<VaultSnapshot>
+    pub snapshots: Vec<VaultSnapshot>,
 }
 
 impl App {
@@ -133,6 +134,7 @@ impl App {
             detail_entry: None,
             table_state,
             status_message: None,
+            status_time: Some(Instant::now()),
             last_interaction: Instant::now(),
             _last_tick: Instant::now(),
             vault_version: 0,
@@ -140,6 +142,11 @@ impl App {
             obscure_inputs: true,
             snapshots: vec![],
         }
+    }
+
+    pub fn set_status(&mut self, msg: String) {
+        self.status_message = Some(msg);
+        self.status_time = Some(Instant::now());
     }
 
     pub fn get_selected_entry(&self) -> Option<&Entry> {
@@ -213,8 +220,9 @@ impl App {
                 self.state = AppState::EntriesList;
                 self.load_entries();
             }
-            Ok(Response::Error(_)) => {
+            Ok(Response::Error(e)) => {
                 self.vault_unlocked = false;
+                self.set_status(format!("{}", e).into());
                 self.state = AppState::UnlockPrompt;
             }
             Err(_) => {}
@@ -272,7 +280,7 @@ impl App {
 
     pub fn submit_form_update(&mut self) {
         let Some(entry) = self.get_selected_entry() else {
-            self.status_message = Some("No entry selected for update".into());
+            self.set_status("No entry selected for update".into());
             return;
         };
 
@@ -293,11 +301,11 @@ impl App {
             Ok(Response::Ok(_)) => {
                 self.load_entries();
                 self.state = AppState::EntriesList;
-                self.status_message = Some("Entry successfully added!".to_string());
+                self.set_status("Entry successfully added!".into());
                 self.reset_form();
             }
             Ok(Response::Error(e)) => self.log_error("Add Entry", e),
-            Err(_) => self.status_message = Some("Communication error".into()),
+            Err(_) => self.set_status("Communication error".into()),
         }
     }
 
@@ -307,7 +315,7 @@ impl App {
         let password = &self.form_fields[2];
 
         if service.is_empty() || user.is_empty() || password.is_empty() {
-            self.status_message = Some("All fields are required!".to_string());
+            self.set_status("All fields are required!".into());
             return;
         }
 
@@ -321,11 +329,11 @@ impl App {
             Ok(Response::Ok(_)) => {
                 self.load_entries();
                 self.state = AppState::EntriesList;
-                self.status_message = Some("Entry successfully added!".to_string());
+                self.set_status("Entry successfully added!".into());
                 self.reset_form();
             }
             Ok(Response::Error(e)) => self.log_error("Add Entry", e),
-            Err(_) => self.status_message = Some("Communication error".into()),
+            Err(_) => self.set_status("Communication error".into()),
         }
     }
 
@@ -335,12 +343,12 @@ impl App {
         let confirm = &self.form_fields[2];
 
         if new.is_empty() || old.is_empty() {
-            self.status_message = Some("Fields cannot be empty!".into());
+            self.set_status("Fields cannot be empty!".into());
             return;
         }
 
         if new != confirm {
-            self.status_message = Some("New passwords do not match!".into());
+            self.set_status("New passwords do not match!".into());
             return;
         }
 
@@ -349,11 +357,11 @@ impl App {
         }) {
             Ok(Response::Ok(_)) => {
                 self.state = AppState::EntriesList;
-                self.status_message = Some("Master password updated!".into());
+                self.set_status("Master password updated!".into());
                 self.reset_form();
             }
             Ok(Response::Error(e)) => self.log_error("Update Master Pass", e),
-            Err(_) => self.status_message = Some("Communication error".into()),
+            Err(_) => self.set_status("Communication error".into()),
         }
     }
 
@@ -372,7 +380,7 @@ impl App {
             action, err, self.form_fields.join(",")
         );
         let _ = std::fs::write("blackout_debug.txt", debug_info);
-        self.status_message = Some(format!("{} failed. Check debug log.", action));
+        self.set_status(format!("{} failed. Check debug log.", action));
     }
 
     pub fn reset_form(&mut self) {
@@ -381,12 +389,11 @@ impl App {
         }
         self.current_field = 0;
         self.table_state.select(Some(0));
-        self.status_message = None;
     }
 
     pub fn delete_selected_entry(&mut self) {
         let Some(entry) = self.get_selected_entry() else {
-            self.status_message = Some("No entry selected for update".into());
+            self.set_status("No entry selected for update".into());
             return;
         };
 
@@ -395,7 +402,7 @@ impl App {
             Ok(Response::Ok(_)) => {
                 self.load_entries();
                 self.state = AppState::EntriesList;
-                self.status_message = Some("Entry successfully deleted!".to_string());
+                self.set_status("Entry successfully deleted!".into());
             }
             Ok(Response::Error(e)) => {
                 let debug_info = format!("Delete Error: {}\nID:{}", e, uuid);
@@ -407,7 +414,7 @@ impl App {
 
     pub fn view_selected_entry(&mut self) {
         let Some(entry) = self.get_selected_entry() else {
-            self.status_message = Some("No entry selected for update".into());
+            self.set_status("No entry selected for update".into());
             return;
         };
         let uuid = entry.id;
@@ -434,7 +441,7 @@ impl App {
 
     pub fn populate_form(&mut self) {
         let Some(entry) = self.get_selected_entry() else {
-            self.status_message = Some("No entry selected for update".into());
+            self.set_status("No entry selected for update".into());
             return;
         };
         let uuid = entry.id;
@@ -445,7 +452,7 @@ impl App {
                 self.form_fields[2] = entry.secret.to_string();
             }
         } else {
-            self.status_message = Some("failed to load datails. Check debug log.".into());
+            self.set_status("failed to load datails. Check debug log.".into());
         }
     }
 
@@ -469,11 +476,11 @@ impl App {
                 if let Some(mut stdin) = process.stdin.take() {
                     let _ = stdin.write_all(text.as_bytes());
                 }
-                self.status_message = Some("Password copied to clipboard!".to_string());
+                self.set_status("Password copied to clipboard!".into());
             }
             Err(e) => {
                 let _ = std::fs::write("blackout_debug.txt", format!("Erro wl-copy: {}", e));
-                self.status_message = Some("Failed to copy (missing wl-copy)".to_string());
+                self.set_status("Failed to copy (missing wl-copy)".into());
             }
         }
     }

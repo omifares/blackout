@@ -66,6 +66,13 @@ fn run(mut terminal: DefaultTerminal, app: &mut app::App) -> Result<()> {
         } else { // > 30s auto-lock vault
             app.lock_application();
         }
+
+        if let Some(time) = app.status_time {
+            if time.elapsed() >= Duration::from_secs(4) {
+                app.status_message = None;
+                app.status_time = None;
+            }
+        }
     }
     Ok(())
 }
