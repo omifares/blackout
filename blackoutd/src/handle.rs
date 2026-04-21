@@ -2,14 +2,15 @@ use serde_json::json;
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
-use tracing::{error, info, warn};
+use tracing::{debug, warn};
 use uuid::Uuid;
 
+use blackout_core::config::DaemonConfig;
 use blackout_core::ipc::{
     EntryInput, EntryUpdateInput, Request, Response, VaultListPayload, VaultSnapshotPayload,
 };
 use blackout_core::storage::Wallet;
-use blackout_core::vault::{Entry, Vault};
+use blackout_core::vault::{Entry, Vault, VaultSnapshot};
 
 use crate::daemon::DaemonState;
 
@@ -59,7 +60,7 @@ pub async fn process_request(
     if needs_auth(&req) {
         let st = ctx.state.read().await;
         if !st.authenticated {
-            debug!("Access denied: Vault is locked.");
+            warn!("Access denied: Vault is locked.");
             return Response::Error("Vault is locked".into());
         }
     }
@@ -68,7 +69,7 @@ pub async fn process_request(
         let mut st = ctx.state.write().await;
 
         if !st.authenticated {
-            debug!("Vault is locked. Please unlock it first.");
+            warn!("Vault is locked. Please unlock it first.");
             return Response::Error("Vault is locked".into());
         }
 
@@ -156,10 +157,10 @@ async fn handle_unlock(ctx: Context, password: String) -> Response {
     let state = ctx.state;
 
     if !storage.exists() {
-        debug!("Vault file not found, creating a new encrypted vault...");
+        warn!("Vault file not found, creating a new encrypted vault...");
         let new_vault = Vault::default();
         if let Err(e) = storage.encrypt_and_save_vault(&new_vault, &password) {
-            debug!("Failed to initialize vault: {}", e);
+            error!("Failed to initialize vault: {}", e);
             return Response::Error(format!("Failed to initialize vault: {}", e));
         }
         let mut st = state.write().await;
@@ -170,7 +171,7 @@ async fn handle_unlock(ctx: Context, password: String) -> Response {
         return Response::Ok("Vault initialized and unlocked".into());
     }
 
-    debug!("Vault already exists, attempting to load...");
+    info!("Vault already exists, attempting to load...");
     match storage.load_vault(&password) {
         Ok(vault) => {
             let mut st = state.write().await;
@@ -180,7 +181,7 @@ async fn handle_unlock(ctx: Context, password: String) -> Response {
             Response::Ok("Vault unlocked successfully".into())
         }
         Err(e) => {
-            debug!("Failed to load vault: {}", e);
+            error!("Failed to load vault: {}", e);
             Response::Error(format!("Failed to load vault: {}", e))
         }
     }
@@ -239,11 +240,11 @@ async fn handle_get_entry(service: String, state: Arc<RwLock<DaemonState>>) -> R
         if !entries.is_empty() {
             Response::Ok(format!("{:?}", entries))
         } else {
-            debug!("No entry found for service: {}", service);
+            error!("No entry found for service: {}", service);
             Response::Error(format!("No entry found for service: {}", service))
         }
     } else {
-        debug!("Vault is not loaded.");
+        warn!("Vault is not loaded.");
         Response::Error("Vault is not loaded.".into())
     }
 }
@@ -257,17 +258,17 @@ async fn handle_get_entry_by_id(uuid: Uuid, state: Arc<RwLock<DaemonState>>) -> 
                 if let Some(entry) = vault.get_entry_by_id(id) {
                     Response::Ok(serde_json::to_string(&entry).unwrap())
                 } else {
-                    debug!("No entry found with id: {}", uuid);
+                    error!("No entry found with id: {}", uuid);
                     Response::Error(format!("No entry found with id: {}", uuid))
                 }
             }
             Err(e) => {
-                debug!("Invalid UUID format: {}", e);
+                error!("Invalid UUID format: {}", e);
                 Response::Error("Invalid UUID format".into())
             }
         }
     } else {
-        debug!("Vault is not loaded.");
+        warn!("Vault is not loaded.");
         Response::Error("Vault is not loaded.".into())
     }
 }
@@ -284,22 +285,22 @@ async fn handle_delete_entry(ctx: Context, uuid: uuid::Uuid) -> Response {
                     if let Some(p) = password.as_ref()
                         && let Err(e) = ctx.storage.encrypt_and_save_vault(vault, p)
                     {
-                        debug!("Failed to save vault: {}", e);
+                        error!("Failed to save vault: {}", e);
                         return Response::Error(format!("Failed to save vault: {}", e));
                     }
                     Response::Ok("Entry deleted successfully".into())
                 } else {
-                    debug!("No entry found with id: {}", uuid);
+                    error!("No entry found with id: {}", uuid);
                     Response::Error(format!("No entry found with id: {}", uuid))
                 }
             }
             Err(_) => {
-                debug!("Invalid UUID format");
+                error!("Invalid UUID format");
                 Response::Error("Invalid UUID format".into())
             }
         }
     } else {
-        debug!("Vault is not loaded.");
+        warn!("Vault is not loaded.");
         Response::Error("Vault is not loaded.".into())
     }
 }
@@ -318,12 +319,12 @@ async fn handle_update_entry(ctx: Context, entry_ctx: EntryUpdateInput) -> Respo
         if let Some(p) = password.as_ref()
             && let Err(e) = ctx.storage.encrypt_and_save_vault(vault, p)
         {
-            debug!("Failed to save vault: {}", e);
+            error!("Failed to save vault: {}", e);
             return Response::Error(format!("Failed to save vault: {}", e));
         }
         Response::Ok("Entry updated successfully".into())
     } else {
-        debug!("Vault is not loaded.");
+        warn!("Vault is not loaded.");
         Response::Error("Vault is not loaded.".into())
     }
 }
@@ -336,7 +337,7 @@ async fn handle_update_master_password(ctx: Context, new_password: String) -> Re
     };
 
     let Some(_vault) = &mut st.vault else {
-        debug!("Vault is not loaded.");
+        warn!("Vault is not loaded.");
         return Response::Error("Vault is not loaded.".into());
     };
 
