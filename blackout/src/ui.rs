@@ -279,9 +279,11 @@ fn render_snapshot_list(frame: &mut Frame, area: Rect, app: &mut App) {
                 reason: shot.reason.clone()
             };
 
+            let display_hash = shot_view.checksum.get(..7).unwrap_or(&shot_view.checksum).to_string();
+
             Row::new(vec![
                 Cell::from(shot_view.version.to_string()),
-                Cell::from(shot_view.checksum.to_string()),
+                Cell::from(display_hash),
                 Cell::from(shot_view.created_at.format("%Y-%m-%d %H:%M").to_string()),
                 Cell::from(shot_view.reason.to_string()),
             ])

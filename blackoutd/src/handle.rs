@@ -83,7 +83,7 @@ pub async fn process_request(
                 };
                 format!("Delete entry: {}", entry_name).into()
             }
-            Request::UpdateEntry{ entry_ctx } => format!("Update entry: {:?}", entry_ctx.service).into(),
+            Request::UpdateEntry{ entry_ctx } => format!("Update entry: {}", entry_ctx.service.as_deref().unwrap_or("Unknown")).into(),
             Request::UpdateMasterPassword { .. } => "Master password rotation".to_string(),
             _ => { "Unknown reason".into() }
         };
