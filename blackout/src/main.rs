@@ -1,5 +1,6 @@
 mod app;
 mod events;
+mod state;
 mod ui;
 
 use blackout_core::config::DaemonConfig;

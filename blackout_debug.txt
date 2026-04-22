@@ -1,2 +1,2 @@
-Restore snapshot Error: The file for this snapshot has been deleted from the disk.
-Version:14
+Restore Snapshot Error: The file for this snapshot has expired or does not exist.
+Data: ,,

@@ -1,98 +1,16 @@
 use blackout_core::ipc::{
     EntryInput, EntryUpdateInput, Request, Response, VaultListPayload, VaultSnapshotPayload,
 };
+
 use blackout_core::vault::{Entry, VaultSnapshot};
 
-use chrono::{DateTime, Local};
+use crate::state::{DetailEntryView, FieldConfig, FormState, SelectedItem, SettingsState};
 
-use ratatui::widgets::{ListState, TableState};
+use ratatui::widgets::TableState;
 
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::time::Instant;
-
-pub struct SnapshotView {
-    pub version: u32,
-    pub created_at: DateTime<Local>,
-    pub checksum: String,
-    pub reason: String,
-}
-
-pub trait EntryView {
-    fn _id(&self) -> &uuid::Uuid;
-    fn service(&self) -> &str;
-    fn username(&self) -> &str;
-    fn updated_at(&self) -> DateTime<Local>;
-}
-
-#[derive(Debug, Clone)]
-pub struct ListEntryView(pub Entry);
-
-impl EntryView for ListEntryView {
-    fn _id(&self) -> &uuid::Uuid {
-        &self.0.id
-    }
-    fn service(&self) -> &str {
-        &self.0.service
-    }
-    fn username(&self) -> &str {
-        &self.0.username
-    }
-    fn updated_at(&self) -> DateTime<Local> {
-        self.0.updated_at
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct DetailEntryView {
-    pub entry: Entry,
-    pub show_password: bool,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct FieldConfig {
-    pub label: String,
-    pub is_password: bool,
-    pub show_password: bool,
-}
-
-pub enum SelectedItem<'a> {
-    Entry(&'a Entry),
-    Snapshot(&'a VaultSnapshot),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum SettingsOption {
-    ChangeMasterPassword,
-    SnapshotList,
-}
-
-impl SettingsOption {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::ChangeMasterPassword => "Change Master Password",
-            Self::SnapshotList => "Snapshots",
-        }
-    }
-}
-
-#[derive(PartialEq, Debug, Clone)]
-pub struct SettingsState {
-    pub list_state: ListState,
-    pub options: Vec<SettingsOption>,
-}
-
-impl Default for SettingsState {
-    fn default() -> Self {
-        Self {
-            list_state: ListState::default(),
-            options: vec![
-                SettingsOption::ChangeMasterPassword,
-                SettingsOption::SnapshotList,
-            ],
-        }
-    }
-}
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum AppState {
@@ -121,9 +39,7 @@ pub struct App {
     pub last_interaction: Instant,
     pub _last_tick: std::time::Instant,
     pub vault_version: u32,
-    pub form_fields: Vec<String>,
-    pub current_field: usize,
-    pub obscure_inputs: bool,
+    pub form_state: FormState,
     pub snapshots: Vec<VaultSnapshot>,
 }
 
@@ -137,7 +53,6 @@ impl App {
             vault_unlocked: false,
             entries: vec![],
             input_buffer: String::new(),
-            current_field: 0,
             detail_entry: None,
             table_state,
             status_message: None,
@@ -145,10 +60,18 @@ impl App {
             last_interaction: Instant::now(),
             _last_tick: Instant::now(),
             vault_version: 0,
-            form_fields: vec![String::new(), String::new(), String::new()],
-            obscure_inputs: true,
+            form_state: FormState::new(),
             snapshots: vec![],
         }
+    }
+
+    pub fn is_cursor_visible(&self) -> bool {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+            % 1000
+            < 500 // interval: 500ms
     }
 
     pub fn set_status(&mut self, msg: String) {
@@ -316,7 +239,8 @@ impl App {
     }
 
     pub fn get_input_for_field(&self, index: usize) -> &str {
-        self.form_fields
+        self.form_state
+            .fields
             .get(index)
             .map(|s| s.as_str())
             .unwrap_or("")
@@ -336,9 +260,9 @@ impl App {
             }
         };
 
-        let service = &self.form_fields[0];
-        let user = &self.form_fields[1];
-        let password = &self.form_fields[2];
+        let service = &self.form_state.fields[0];
+        let user = &self.form_state.fields[1];
+        let password = &self.form_state.fields[2];
 
         let entry_ctx = EntryUpdateInput {
             uuid,
@@ -360,9 +284,9 @@ impl App {
     }
 
     pub fn submit_form_add(&mut self) {
-        let service = &self.form_fields[0];
-        let user = &self.form_fields[1];
-        let password = &self.form_fields[2];
+        let service = &self.form_state.fields[0];
+        let user = &self.form_state.fields[1];
+        let password = &self.form_state.fields[2];
 
         if service.is_empty() || user.is_empty() || password.is_empty() {
             self.set_status("All fields are required!".into());
@@ -388,9 +312,9 @@ impl App {
     }
 
     pub fn submit_form_update_master_password(&mut self) {
-        let old = &self.form_fields[0];
-        let new = &self.form_fields[1];
-        let confirm = &self.form_fields[2];
+        let old = &self.form_state.fields[0];
+        let new: String = self.form_state.fields[1].clone();
+        let confirm: String = self.form_state.fields[2].clone();
 
         if new.is_empty() || old.is_empty() {
             self.set_status("Fields cannot be empty!".into());
@@ -399,12 +323,9 @@ impl App {
 
         if new != confirm {
             self.set_status("New passwords do not match!".into());
-            return;
         }
 
-        match crate::send_command(Request::UpdateMasterPassword {
-            new_password: new.clone(),
-        }) {
+        match crate::send_command(Request::UpdateMasterPassword { new_password: new }) {
             Ok(Response::Ok(_)) => {
                 self.state = AppState::EntriesList;
                 self.set_status("Master password updated!".into());
@@ -429,32 +350,23 @@ impl App {
             "{} Error: {}\nData: {}",
             action,
             err,
-            self.form_fields.join(",")
+            self.form_state.fields.join(",")
         );
         let _ = std::fs::write("blackout_debug.txt", debug_info);
         self.set_status(format!("{} failed. Check debug log.", action));
     }
 
     pub fn reset_form(&mut self) {
-        for field in self.form_fields.iter_mut() {
+        for field in self.form_state.fields.iter_mut() {
             field.clear();
         }
-        self.current_field = 0;
+        self.form_state.current_index = 0;
         self.table_state.select(Some(0));
     }
 
     pub fn delete_selected_entry(&mut self) {
-        let Some(item) = self.get_selected_item() else {
-            self.set_status("No entry selected for update".into());
+        let Some(uuid) = self.get_selected_entry_id() else {
             return;
-        };
-
-        let uuid = match item {
-            SelectedItem::Entry(entry) => entry.id,
-            _ => {
-                self.set_status("Type mismatch: Selected item is not an entry".into());
-                return;
-            }
         };
 
         match crate::send_command(Request::DeleteEntry { uuid }) {
@@ -463,10 +375,23 @@ impl App {
                 self.state = AppState::EntriesList;
                 self.set_status("Entry successfully deleted!".into());
             }
-            Ok(Response::Error(e)) => {
-                let debug_info = format!("Delete Error: {}\nID:{}", e, uuid);
-                let _ = std::fs::write("blackout_debug.txt", debug_info);
+            Ok(Response::Error(e)) => self.log_error("Delete", e),
+            Err(_) => {}
+        }
+    }
+
+    pub fn restore_selected_snapshot(&mut self) {
+        let Some(target_version) = self.get_selected_snapshot_version() else {
+            return;
+        };
+
+        match crate::send_command(Request::RestoreSnapshot { target_version }) {
+            Ok(Response::Ok(_)) => {
+                self.load_entries();
+                self.state = AppState::EntriesList;
+                self.set_status(format!("Snapshot v{} restored!", target_version));
             }
+            Ok(Response::Error(e)) => self.log_error("Restore Snapshot", e),
             Err(_) => {}
         }
     }
@@ -522,9 +447,9 @@ impl App {
 
         if let Ok(Response::Ok(data)) = crate::send_command(Request::GetEntryById { uuid }) {
             if let Ok(entry) = serde_json::from_str::<Entry>(&data) {
-                self.form_fields[0] = entry.service.to_string();
-                self.form_fields[1] = entry.username.to_string();
-                self.form_fields[2] = entry.secret.to_string();
+                self.form_state.fields[0] = entry.service.to_string();
+                self.form_state.fields[1] = entry.username.to_string();
+                self.form_state.fields[2] = entry.secret.to_string();
             }
         } else {
             self.set_status("failed to load datails. Check debug log.".into());
@@ -560,34 +485,29 @@ impl App {
         }
     }
 
-    pub fn restore_selected_snapshot(&mut self) {
-        let Some(item) = self.get_selected_item() else {
-            self.set_status("No snapshot selected to restore".into());
-            return;
-        };
+    // Helper para Entradas
+    pub fn get_selected_entry_id(&mut self) -> Option<uuid::Uuid> {
+        let item = self.get_selected_item()?; // Retorna None silenciosamente se não houver item
 
-        let version = match item {
-            SelectedItem::Snapshot(snap) => snap.version,
+        match item {
+            SelectedItem::Entry(entry) => Some(entry.id),
             _ => {
-                self.set_status("Type mismatch: Selected item is not an snapshot".into());
-                return;
+                self.set_status("Type mismatch: Selected item is not an entry".into());
+                None
             }
-        };
+        }
+    }
 
-        match crate::send_command(Request::RestoreSnapshot {
-            target_version: version,
-        }) {
-            Ok(Response::Ok(_)) => {
-                self.load_entries();
-                self.state = AppState::EntriesList;
-                self.set_status(format!("Snapshot v{} restored!", version).into());
+    // Helper para Snapshots
+    pub fn get_selected_snapshot_version(&mut self) -> Option<u32> {
+        let item = self.get_selected_item()?;
+
+        match item {
+            SelectedItem::Snapshot(snap) => Some(snap.version),
+            _ => {
+                self.set_status("Type mismatch: Selected item is not a snapshot".into());
+                None
             }
-            Ok(Response::Error(e)) => {
-                self.set_status(format!("Fail: {}", e).into());
-                let debug_info = format!("Restore snapshot Error: {}\nVersion:{}", e, version);
-                let _ = std::fs::write("blackout_debug.txt", debug_info);
-            }
-            Err(_) => {}
         }
     }
 }

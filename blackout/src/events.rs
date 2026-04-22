@@ -1,6 +1,8 @@
 use std::time::Instant;
 
-use crate::app::{App, AppState, FieldConfig, SettingsOption, SettingsState};
+use crate::app::{App, AppState};
+use crate::state::settings::{FieldConfig, SettingsOption, SettingsState};
+
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub fn handle_event(app: &mut App, key: KeyEvent) {
@@ -163,30 +165,32 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
         | AppState::UpdateEntry(ref mut fields)
         | AppState::ChangeMasterPassword(ref mut fields) => match key.code {
             KeyCode::Tab => {
-                app.current_field = (app.current_field + 1) % fields.len();
+                app.form_state.current_index = (app.form_state.current_index + 1) % fields.len();
             }
             KeyCode::BackTab => {
-                if app.current_field == 0 {
-                    app.current_field = fields.len() - 1;
+                if app.form_state.current_index == 0 {
+                    app.form_state.current_index = fields.len() - 1;
                 } else {
-                    app.current_field -= 1;
+                    app.form_state.current_index -= 1;
                 }
             }
             KeyCode::Char(c) => {
-                if let Some(field_text) = app.form_fields.get_mut(app.current_field) {
+                if let Some(field_text) =
+                    app.form_state.fields.get_mut(app.form_state.current_index)
+                {
                     field_text.push(c);
                 }
             }
             KeyCode::Backspace => {
-                if let Some(field_text) = app.form_fields.get_mut(app.current_field) {
+                if let Some(field_text) =
+                    app.form_state.fields.get_mut(app.form_state.current_index)
+                {
                     field_text.pop();
                 }
             }
             KeyCode::F(2) => {
-                if let Some(field) = fields.get_mut(app.current_field)
-                    && field.is_password
-                {
-                    field.show_password = !field.show_password;
+                if app.form_state.is_password[app.form_state.current_index] {
+                    app.form_state.obscure_inputs = !app.form_state.obscure_inputs;
                 }
             }
             KeyCode::Enter => {
