@@ -1,15 +1,18 @@
-use crate::vault::{Vault, Entry, VaultSnapshot, derive_key_argon2id};
+use crate::vault::{Entry, Vault, VaultSnapshot, derive_key_argon2id};
 use chacha20poly1305::XChaCha20Poly1305;
 use chacha20poly1305::XNonce;
 use chacha20poly1305::aead::{Aead, KeyInit, OsRng};
+use chrono::Local;
 use rand::RngCore;
 use serde_cbor;
+use sha2::{Digest, Sha256};
 use std::error::Error;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::result::Result;
-use sha2::{Sha256, Digest};
+
+const VAULT_FILENAME: &str = "vault.blackout";
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct EncryptedVault {
@@ -34,8 +37,13 @@ impl Wallet {
         Self { path }
     }
 
-    pub fn load_vault(&self, password: &str) -> Result<Vault, Box<dyn Error + Send + Sync>> {
-        let file_path = self.path.join("vault.blackout");
+    pub fn load_vault(
+        &self,
+        password: &str,
+        custom_path: Option<&PathBuf>,
+    ) -> Result<Vault, Box<dyn Error + Send + Sync>> {
+        let default_vault_path: PathBuf = self.path.join(VAULT_FILENAME);
+        let file_path = custom_path.cloned().unwrap_or(default_vault_path);
         let bytes = fs::read(file_path)?;
 
         // Deserialize the encrypted vault
@@ -55,8 +63,32 @@ impl Wallet {
         Ok(vault)
     }
 
+    pub fn load_snapshot_entries(
+        &self,
+        password: &str,
+        backup_path: &PathBuf,
+    ) -> Result<Vec<Entry>, Box<dyn Error + Send + Sync>> {
+        let bytes = fs::read(backup_path)?;
+
+        // Deserialize the encrypted vault
+        let encrypted: EncryptedVault = serde_cbor::from_slice(&bytes)?;
+        let (derived_key, _) = derive_key_argon2id(password, Some(&encrypted.salt), 16, 32)?;
+
+        // Decrypt the vault
+        let aead = XChaCha20Poly1305::new(chacha20poly1305::Key::from_slice(&derived_key[..32]));
+        let nonce = XNonce::from_slice(&encrypted.nonce);
+
+        let plaintext = aead
+            .decrypt(nonce, encrypted.ciphertext.as_ref())
+            .map_err(|_| "Decryption failed")?;
+
+        let entries: Vec<Entry> = serde_cbor::from_slice(&plaintext)?;
+
+        Ok(entries)
+    }
+
     pub fn exists(&self) -> bool {
-        self.path.join("vault.blackout").exists()
+        self.path.join(VAULT_FILENAME).exists()
     }
 
     pub fn delete_vault(&self) -> std::io::Result<()> {
@@ -72,7 +104,7 @@ impl Wallet {
         vault: &Vault,
         password: &str,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let file_path: PathBuf = self.path.join("vault.blackout");
+        let file_path: PathBuf = self.path.join(VAULT_FILENAME);
         let temp_path: PathBuf = self.path.join("vault.tmp");
 
         let serialized = serde_cbor::to_vec(vault).expect("Failed to serialize vault");
@@ -121,6 +153,7 @@ impl Wallet {
         entries: &Vec<Entry>,
         version: u32,
         password: &str,
+        reason: &str,
     ) -> Result<VaultSnapshot, Box<dyn Error + Send + Sync>> {
         let snapshots_dir = self.path.join(".snapshots");
         if !snapshots_dir.exists() {
@@ -130,7 +163,7 @@ impl Wallet {
         let file_name = format!("v{}.blackout.bak", version);
         let file_path = snapshots_dir.join(&file_name);
         let temp_file_name = file_name + ".tmp";
-        let temp_path= snapshots_dir.join(&temp_file_name);
+        let temp_path = snapshots_dir.join(&temp_file_name);
 
         // Serialize
         let serialized = serde_cbor::to_vec(entries)?;
@@ -164,19 +197,21 @@ impl Wallet {
         fs::rename(&temp_path, &file_path)?;
 
         Ok(VaultSnapshot {
+            uuid: uuid::Uuid::now_v7(),
             version,
-            timestamp: chrono::Utc::now().timestamp(),
+            created_at: Local::now(),
             checksum,
-            file_ref: file_path.to_string_lossy().into_owned(),
+            reason: reason.into(),
+            file_ref: Some(PathBuf::new().join(file_path.to_string_lossy().into_owned())),
         })
     }
 
     pub fn update_vault_password(
         &self,
         current_passsword: String,
-        new_password: String
+        new_password: String,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let vault = self.load_vault(&current_passsword)?;
+        let vault = self.load_vault(&current_passsword, None)?;
         self.encrypt_and_save_vault(&vault, &new_password)?;
         Ok(())
     }

@@ -2,12 +2,15 @@ use serde_json::json;
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
-use tracing::debug;
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use blackout_core::ipc::{EntryInput, EntryUpdateInput, Request, Response, VaultListPayload};
+use blackout_core::config::DaemonConfig;
+use blackout_core::ipc::{
+    EntryInput, EntryUpdateInput, Request, Response, VaultListPayload, VaultSnapshotPayload,
+};
 use blackout_core::storage::Wallet;
-use blackout_core::vault::Vault;
+use blackout_core::vault::{Entry, Vault, VaultSnapshot};
 
 use crate::daemon::DaemonState;
 
@@ -35,10 +38,10 @@ fn needs_auth(req: &Request) -> bool {
 fn is_mutation(req: &Request) -> bool {
     matches!(
         req,
-        Request::AddEntry { .. } |
-        Request::UpdateEntry { .. } |
-        Request::DeleteEntry { .. } |
-        Request::UpdateMasterPassword { .. }
+        Request::AddEntry { .. }
+            | Request::UpdateEntry { .. }
+            | Request::DeleteEntry { .. }
+            | Request::UpdateMasterPassword { .. }
     )
 }
 
@@ -57,7 +60,7 @@ pub async fn process_request(
     if needs_auth(&req) {
         let st = ctx.state.read().await;
         if !st.authenticated {
-            debug!("Access denied: Vault is locked.");
+            warn!("Access denied: Vault is locked.");
             return Response::Error("Vault is locked".into());
         }
     }
@@ -66,11 +69,51 @@ pub async fn process_request(
         let mut st = ctx.state.write().await;
 
         if !st.authenticated {
-            debug!("Vault is locked. Please unlock it first.");
+            warn!("Vault is locked. Please unlock it first.");
             return Response::Error("Vault is locked".into());
         }
 
+        // PRE-FLIGHT
+        if let Request::RestoreSnapshot { version, uuid } = &req {
+            if let Some(vault) = &st.vault {
+                let can_restore = vault
+                    .history
+                    .iter()
+                    .any(|s| s.uuid == *uuid && s.file_ref.is_some());
+
+                if !can_restore {
+                    error!("Can't load snapshot file for uuid {}", uuid);
+                    return Response::Error(format!(
+                        "Fail to load snapshot v{} from disk",
+                        version
+                    ));
+                }
+            }
+        }
+
         // Create snapshot
+        let reason = match &req {
+            Request::AddEntry { entry_ctx } => format!("Add entry: {}", entry_ctx.service),
+            Request::DeleteEntry { uuid } => {
+                let entry_name = if let Some(vault) = &st.vault {
+                    find_entry_by_id(vault, *uuid)
+                        .map(|e| e.service.clone())
+                        .unwrap_or_else(|| "Unknown".to_string())
+                } else {
+                    "Unknown".to_string()
+                };
+                format!("Delete entry: {}", entry_name)
+            }
+            Request::UpdateEntry { entry_ctx } => format!(
+                "Update entry: {}",
+                entry_ctx.service.as_deref().unwrap_or("Unknown")
+            ),
+            Request::UpdateMasterPassword { .. } => "Master password rotation".to_string(),
+            Request::RestoreSnapshot { version, uuid } => {
+                format!("Restore snapshot {} (version {})", uuid, version)
+            }
+            _ => "Unknown reason".into(),
+        };
 
         let password = match st.master_password.clone() {
             Some(p) => p,
@@ -78,10 +121,14 @@ pub async fn process_request(
         };
 
         if let Some(vault) = &mut st.vault {
-            match ctx.storage.create_backup_file(&vault.entries, vault.version, &password) {
+            match ctx
+                .storage
+                .create_backup_file(&vault.entries, vault.version, &password, &reason)
+            {
                 Ok(meta) => {
                     vault.history.push(meta);
-                },
+                    prune_excess_snapshots(vault);
+                }
                 Err(e) => return Response::Error(format!("Snapshot failed: {}", e)),
             }
         }
@@ -97,22 +144,25 @@ pub async fn process_request(
         Request::GetEntryById { uuid } => handle_get_entry_by_id(uuid, ctx.state).await,
         Request::DeleteEntry { uuid } => handle_delete_entry(ctx, uuid).await,
         Request::UpdateEntry { entry_ctx } => handle_update_entry(ctx, entry_ctx).await,
-        Request::UpdateMasterPassword { new_password } => handle_update_master_password(ctx, new_password ).await,
+        Request::UpdateMasterPassword { new_password } => {
+            handle_update_master_password(ctx, new_password).await
+        }
+        Request::ListSnapshots => handle_list_snapshots(&ctx).await,
+        Request::RestoreSnapshot { version, uuid } => {
+            handle_restore_snapshot(ctx, uuid, version).await
+        }
     }
 }
 
-async fn handle_unlock(
-    ctx: Context,
-    password: String,
-) -> Response {
+async fn handle_unlock(ctx: Context, password: String) -> Response {
     let storage = ctx.storage;
     let state = ctx.state;
 
     if !storage.exists() {
-        debug!("Vault file not found, creating a new encrypted vault...");
+        warn!("Vault file not found, creating a new encrypted vault...");
         let new_vault = Vault::default();
         if let Err(e) = storage.encrypt_and_save_vault(&new_vault, &password) {
-            debug!("Failed to initialize vault: {}", e);
+            error!("Failed to initialize vault: {}", e);
             return Response::Error(format!("Failed to initialize vault: {}", e));
         }
         let mut st = state.write().await;
@@ -123,8 +173,8 @@ async fn handle_unlock(
         return Response::Ok("Vault initialized and unlocked".into());
     }
 
-    debug!("Vault already exists, attempting to load...");
-    match storage.load_vault(&password) {
+    info!("Vault already exists, attempting to load...");
+    match storage.load_vault(&password, None) {
         Ok(vault) => {
             let mut st = state.write().await;
             st.vault = Some(vault);
@@ -133,7 +183,7 @@ async fn handle_unlock(
             Response::Ok("Vault unlocked successfully".into())
         }
         Err(e) => {
-            debug!("Failed to load vault: {}", e);
+            error!("Failed to load vault: {}", e);
             Response::Error(format!("Failed to load vault: {}", e))
         }
     }
@@ -148,10 +198,7 @@ async fn handle_lock(state: Arc<RwLock<DaemonState>>) -> Response {
     Response::Ok("Vault locked and memory cleared".into())
 }
 
-async fn handle_add_entry(
-    ctx: Context,
-    entry_ctx: EntryInput,
-) -> Response {
+async fn handle_add_entry(ctx: Context, entry_ctx: EntryInput) -> Response {
     let mut st = ctx.state.write().await;
     let password = st.master_password.clone().unwrap();
 
@@ -159,6 +206,7 @@ async fn handle_add_entry(
         vault.add_entry(entry_ctx.service, entry_ctx.username, entry_ctx.password);
 
         if let Err(e) = ctx.storage.encrypt_and_save_vault(vault, &password) {
+            error!("Failed to save vault after adding entry: {}", e);
             return Response::Error(format!("Save failed: {}", e));
         }
         Response::Ok("Entry added".into())
@@ -171,7 +219,6 @@ pub async fn handle_list_entries(ctx: &Context) -> Response {
     let st = ctx.state.read().await;
 
     if let Some(vault) = &st.vault {
-
         let payload = VaultListPayload {
             entries: vault.entries.clone(),
             version: vault.version,
@@ -200,7 +247,7 @@ async fn handle_get_entry(service: String, state: Arc<RwLock<DaemonState>>) -> R
             Response::Error(format!("No entry found for service: {}", service))
         }
     } else {
-        debug!("Vault is not loaded.");
+        warn!("Vault is not loaded.");
         Response::Error("Vault is not loaded.".into())
     }
 }
@@ -214,25 +261,22 @@ async fn handle_get_entry_by_id(uuid: Uuid, state: Arc<RwLock<DaemonState>>) -> 
                 if let Some(entry) = vault.get_entry_by_id(id) {
                     Response::Ok(serde_json::to_string(&entry).unwrap())
                 } else {
-                    debug!("No entry found with id: {}", uuid);
+                    error!("No entry found with id: {}", uuid);
                     Response::Error(format!("No entry found with id: {}", uuid))
                 }
             }
             Err(e) => {
-                debug!("Invalid UUID format: {}", e);
+                error!("Invalid UUID format: {}", e);
                 Response::Error("Invalid UUID format".into())
             }
         }
     } else {
-        debug!("Vault is not loaded.");
+        warn!("Vault is not loaded.");
         Response::Error("Vault is not loaded.".into())
     }
 }
 
-async fn handle_delete_entry(
-    ctx: Context,
-    uuid: uuid::Uuid,
-) -> Response {
+async fn handle_delete_entry(ctx: Context, uuid: uuid::Uuid) -> Response {
     let mut st = ctx.state.write().await;
 
     let password = st.master_password.clone();
@@ -244,52 +288,51 @@ async fn handle_delete_entry(
                     if let Some(p) = password.as_ref()
                         && let Err(e) = ctx.storage.encrypt_and_save_vault(vault, p)
                     {
-                        debug!("Failed to save vault: {}", e);
+                        error!("Failed to save vault: {}", e);
                         return Response::Error(format!("Failed to save vault: {}", e));
                     }
                     Response::Ok("Entry deleted successfully".into())
                 } else {
-                    debug!("No entry found with id: {}", uuid);
+                    error!("No entry found with id: {}", uuid);
                     Response::Error(format!("No entry found with id: {}", uuid))
                 }
             }
             Err(_) => {
-                debug!("Invalid UUID format");
+                error!("Invalid UUID format");
                 Response::Error("Invalid UUID format".into())
             }
         }
     } else {
-        debug!("Vault is not loaded.");
+        warn!("Vault is not loaded.");
         Response::Error("Vault is not loaded.".into())
     }
 }
 
-async fn handle_update_entry(
-    ctx: Context,
-    entry_ctx: EntryUpdateInput,
-) -> Response {
+async fn handle_update_entry(ctx: Context, entry_ctx: EntryUpdateInput) -> Response {
     let mut st: tokio::sync::RwLockWriteGuard<'_, DaemonState> = ctx.state.write().await;
 
     let password = st.master_password.clone();
     if let Some(vault) = &mut st.vault {
-        vault.update_entry(entry_ctx.uuid, entry_ctx.service, entry_ctx.username, entry_ctx.password);
+        vault.update_entry(
+            entry_ctx.uuid,
+            entry_ctx.service,
+            entry_ctx.username,
+            entry_ctx.password,
+        );
         if let Some(p) = password.as_ref()
             && let Err(e) = ctx.storage.encrypt_and_save_vault(vault, p)
         {
-            debug!("Failed to save vault: {}", e);
+            error!("Failed to save vault: {}", e);
             return Response::Error(format!("Failed to save vault: {}", e));
         }
         Response::Ok("Entry updated successfully".into())
     } else {
-        debug!("Vault is not loaded.");
+        warn!("Vault is not loaded.");
         Response::Error("Vault is not loaded.".into())
     }
 }
 
-async fn handle_update_master_password(
-    ctx: Context,
-    new_password: String
-) -> Response {
+async fn handle_update_master_password(ctx: Context, new_password: String) -> Response {
     let mut st = ctx.state.write().await;
 
     let Some(password) = st.master_password.clone() else {
@@ -297,12 +340,113 @@ async fn handle_update_master_password(
     };
 
     let Some(_vault) = &mut st.vault else {
-        debug!("Vault is not loaded.");
+        warn!("Vault is not loaded.");
         return Response::Error("Vault is not loaded.".into());
     };
 
     match ctx.storage.update_vault_password(password, new_password) {
         Ok(_) => Response::Ok("Master password updated successfully".into()),
         Err(e) => Response::Error(format!("Failed to update master password: {}", e)),
+    }
+}
+
+pub async fn handle_list_snapshots(ctx: &Context) -> Response {
+    let st = ctx.state.read().await;
+
+    if let Some(vault) = &st.vault {
+        let payload = VaultSnapshotPayload {
+            snapshots: vault.get_snapshots().clone(),
+        };
+
+        let data = serde_json::to_string(&payload).unwrap();
+        Response::Ok(data)
+    } else {
+        Response::Error("Vault is locked".into())
+    }
+}
+
+async fn handle_restore_snapshot(ctx: Context, uuid: Uuid, target_version: u32) -> Response {
+    let mut st = ctx.state.write().await;
+    let password = st.master_password.clone().unwrap();
+
+    if let Some(vault) = &mut st.vault {
+        let snapshot_path = match vault
+            .history
+            .iter()
+            .find(|s| s.uuid == uuid)
+            .and_then(|s| s.file_ref.as_ref())
+        {
+            Some(path) => path.clone(),
+            None => {
+                return Response::Error(
+                    "The file for this snapshot has expired or does not exist.".into(),
+                );
+            }
+        };
+
+        let entries_to_restore = match ctx.storage.load_snapshot_entries(&password, &snapshot_path)
+        {
+            Ok(entries) => entries,
+            Err(e) => return Response::Error(format!("Fail to load snapshot from disk: {}", e)),
+        };
+
+        let reason = format!("Rollback to v{}", target_version);
+        match ctx
+            .storage
+            .create_backup_file(&vault.entries, vault.version, &password, &reason)
+        {
+            Ok(meta) => vault.history.push(meta),
+            Err(e) => return Response::Error(format!("Safety snapshot failed: {}", e)),
+        }
+
+        vault.restore_entries(entries_to_restore);
+
+        if let Err(e) = ctx.storage.encrypt_and_save_vault(vault, &password) {
+            error!("Fail to save vault after rollback: {}", e);
+            return Response::Error(format!("Fail to save vault after rollback: {}", e));
+        }
+
+        prune_excess_snapshots(vault);
+
+        Response::Ok(format!("Snapshot restored successfully to 'v{}'", target_version).into())
+    } else {
+        Response::Error("Vault is not loaded.".into())
+    }
+}
+
+// No lock
+fn find_entry_by_id(vault: &Vault, uuid: Uuid) -> Option<Entry> {
+    vault.get_entry_by_id(uuid)
+}
+
+fn prune_excess_snapshots(vault: &mut Vault) {
+    let config = DaemonConfig::load_config();
+    if config.max_snapshots == 0 {
+        return;
+    }
+
+    let snapshots: Vec<&mut VaultSnapshot> = vault
+        .history
+        .iter_mut()
+        .filter(|s| s.file_ref.is_some())
+        .collect();
+
+    let over_snaps = snapshots
+        .len()
+        .saturating_sub(config.max_snapshots as usize);
+
+    if over_snaps > 0 {
+        for snap in snapshots.into_iter().take(over_snaps) {
+            if let Some(path) = &snap.file_ref {
+                if let Err(e) = std::fs::remove_file(path) {
+                    warn!(
+                        "Fail to remove snapshot file '{}': {}",
+                        path.display().to_string(),
+                        e
+                    );
+                }
+            }
+            snap.file_ref = None;
+        }
     }
 }

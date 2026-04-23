@@ -9,10 +9,10 @@ use zeroize::Zeroize;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Entry {
-    pub id: Uuid,
+    pub uuid: Uuid,
     pub service: String,
     pub username: String,
-    
+
     #[serde(default)]
     pub secret: String,
 
@@ -22,17 +22,21 @@ pub struct Entry {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct VaultSnapshot {
+    pub uuid: Uuid,
     pub version: u32,
-    pub timestamp: i64,
+    pub created_at: DateTime<Local>,
     pub checksum: String,
-    pub file_ref: String,
+    pub file_ref: Option<std::path::PathBuf>,
+
+    #[serde(default)]
+    pub reason: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Vault {
     pub version: u32,
     pub entries: Vec<Entry>,
-    
+
     #[serde(default)]
     pub history: Vec<VaultSnapshot>,
 }
@@ -40,18 +44,18 @@ pub struct Vault {
 impl Vault {
     pub fn add_entry(&mut self, service: String, user: String, pass: String) {
         let new_entry = Entry {
-            id: Uuid::now_v7(),
+            uuid: Uuid::now_v7(),
             service,
             username: user,
             secret: pass,
-            updated_at: Local::now()
+            updated_at: Local::now(),
         };
         self.entries.push(new_entry);
         self.version += 1;
     }
 
     pub fn list_entries(&self) -> Vec<Entry> {
-        self.entries.iter().cloned().collect()
+        self.entries.to_vec()
     }
 
     // Get entry by service name (returns all matches)
@@ -63,23 +67,18 @@ impl Vault {
             .collect()
     }
 
-    pub fn get_entry_by_id(
-        &self,
-        id: Uuid,
-    ) -> Option<(Uuid, String, String, String, DateTime<Local>)> {
-        self.entries.iter().find(|e| e.id == id).map(|e| {
-            (
-                e.id,
-                e.service.clone(),
-                e.username.clone(),
-                e.secret.clone(),
-                e.updated_at,
-            )
+    pub fn get_entry_by_id(&self, id: Uuid) -> Option<Entry> {
+        self.entries.iter().find(|e| e.uuid == id).map(|e| Entry {
+            uuid: e.uuid,
+            service: e.service.clone(),
+            username: e.username.clone(),
+            secret: e.secret.clone(),
+            updated_at: e.updated_at,
         })
     }
 
     pub fn remove_entry(&mut self, id: Uuid) -> bool {
-        if let Some(pos) = self.entries.iter().position(|e| e.id == id) {
+        if let Some(pos) = self.entries.iter().position(|e| e.uuid == id) {
             self.entries.remove(pos);
             self.version += 1;
             true
@@ -95,7 +94,7 @@ impl Vault {
         user: Option<String>,
         pass: Option<String>,
     ) -> bool {
-        if let Some(entry) = self.entries.iter_mut().find(|e| e.id == id) {
+        if let Some(entry) = self.entries.iter_mut().find(|e| e.uuid == id) {
             if let Some(s) = service {
                 entry.service = s;
             }
@@ -116,10 +115,23 @@ impl Vault {
     pub fn get_secret(&self, id: Uuid) -> Option<String> {
         self.entries
             .iter()
-            .find(|e| e.id == id)
+            .find(|e| e.uuid == id)
             .map(|e| e.secret.clone())
     }
 
+    pub fn get_snapshots(&self) -> Vec<VaultSnapshot> {
+        self.history.to_vec()
+    }
+
+    pub fn get_snapshot_by_version(&self, version: u32) -> Option<VaultSnapshot> {
+        self.history.iter().find(|h| h.version == version).cloned()
+    }
+
+    pub fn restore_entries(&mut self, entries: Vec<Entry>) -> bool {
+        self.version += 1;
+        self.entries = entries;
+        true
+    }
 }
 
 /// Derive a key from a password using Argon2id.

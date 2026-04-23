@@ -1,8 +1,8 @@
 mod daemon;
 mod handle;
 
-use tracing::{info, warn, error};
 use std::env;
+use tracing::{error, info, warn};
 
 use crate::daemon::Daemon;
 use blackout_core::storage::Wallet;
@@ -22,7 +22,9 @@ async fn main() {
         prevent_memory_swapping()
             .expect("Panic: Cannot lock memory with mlockall. This is critical for security.");
     } else {
-        warn!("Running without mlock. This may lead to sensitive data being swapped to disk. Use --mlock flag to improve security.");
+        warn!(
+            "Running without mlock. This may lead to sensitive data being swapped to disk. Use --mlock flag to improve security."
+        );
     }
 
     let daemon = Daemon::new(Arc::new(Wallet::init()));
@@ -39,7 +41,7 @@ fn prevent_memory_swapping() -> std::io::Result<()> {
     if result != 0 {
         let err = std::io::Error::last_os_error();
         error!("Failed syscall mlockall: {}", err);
-        return Err(err); 
+        return Err(err);
     }
 
     info!("mlockall successful: Memory is locked and will not be swapped to disk.");
