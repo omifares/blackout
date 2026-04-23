@@ -104,7 +104,7 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                     let entry_id = app.get_selected_entry_id();
                     if let Some(entry_id) = entry_id {
                         app.state = AppState::ConfirmAction {
-                            action: PendingAction::DeleteEntry(entry_id.clone()),
+                            action: PendingAction::DeleteEntry(entry_id),
                             previous_state: Box::new(AppState::EntriesList),
                         };
                     }
@@ -191,11 +191,11 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
         AppState::ConfirmAction { ref action, .. } => match key.code {
             KeyCode::Char('y') | KeyCode::Enter => match action {
                 PendingAction::DeleteEntry(uuid) => {
-                    app.delete_entry(uuid.clone());
+                    app.delete_entry(*uuid);
                     app.state = AppState::EntriesList;
                 }
                 PendingAction::RestoreSnapshot(uuid, version) => {
-                    app.restore_snapshot(uuid.clone(), Some(*version));
+                    app.restore_snapshot(*uuid, Some(*version));
                     app.state = AppState::Settings(SettingsState::default());
                 }
             },
@@ -304,7 +304,7 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 let version = app.get_selected_snapshot_version();
                 if let Some(entry_id) = uuid {
                     app.state = AppState::ConfirmAction {
-                        action: PendingAction::RestoreSnapshot(entry_id.clone(), version.unwrap()),
+                        action: PendingAction::RestoreSnapshot(entry_id, version.unwrap()),
                         previous_state: Box::new(AppState::EntriesList),
                     };
                 }

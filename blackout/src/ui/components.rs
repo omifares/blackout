@@ -62,7 +62,7 @@ pub fn render_pending_action(frame: &mut Frame, area: Rect, action: &PendingActi
         .centered(Constraint::Percentage(50), Constraint::Percentage(60))
         .layout(&Layout::vertical([Constraint::Percentage(50)]));
     let text = vec![
-        Line::from(format!("{}", prompt)).centered(),
+        Line::from(prompt.to_string()).centered(),
         Line::from(""),
         Line::from(" [Y/Enter]  |  [N/Esc] ").centered().bold(),
     ];

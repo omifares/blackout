@@ -74,8 +74,8 @@ pub async fn process_request(
         }
 
         // PRE-FLIGHT
-        if let Request::RestoreSnapshot { version, uuid } = &req {
-            if let Some(vault) = &st.vault {
+        if let Request::RestoreSnapshot { version, uuid } = &req
+            && let Some(vault) = &st.vault {
                 let can_restore = vault
                     .history
                     .iter()
@@ -89,7 +89,6 @@ pub async fn process_request(
                     ));
                 }
             }
-        }
 
         // Create snapshot
         let reason = match &req {
@@ -408,7 +407,7 @@ async fn handle_restore_snapshot(ctx: Context, uuid: Uuid, target_version: u32) 
 
         prune_excess_snapshots(vault);
 
-        Response::Ok(format!("Snapshot restored successfully to 'v{}'", target_version).into())
+        Response::Ok(format!("Snapshot restored successfully to 'v{}'", target_version))
     } else {
         Response::Error("Vault is not loaded.".into())
     }
@@ -433,19 +432,18 @@ fn prune_excess_snapshots(vault: &mut Vault) {
 
     let over_snaps = snapshots
         .len()
-        .saturating_sub(config.max_snapshots as usize);
+        .saturating_sub(config.max_snapshots);
 
     if over_snaps > 0 {
         for snap in snapshots.into_iter().take(over_snaps) {
-            if let Some(path) = &snap.file_ref {
-                if let Err(e) = std::fs::remove_file(path) {
+            if let Some(path) = &snap.file_ref
+                && let Err(e) = std::fs::remove_file(path) {
                     warn!(
                         "Fail to remove snapshot file '{}': {}",
                         path.display().to_string(),
                         e
                     );
                 }
-            }
             snap.file_ref = None;
         }
     }
