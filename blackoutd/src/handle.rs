@@ -85,7 +85,7 @@ pub async fn process_request(
                     error!("Can't load snapshot file for uuid {}", uuid);
                     return Response::Error(format!(
                         "Fail to load snapshot v{} from disk",
-                        version.unwrap_or(0)
+                        version
                     ));
                 }
             }
@@ -110,11 +110,7 @@ pub async fn process_request(
             ),
             Request::UpdateMasterPassword { .. } => "Master password rotation".to_string(),
             Request::RestoreSnapshot { version, uuid } => {
-                if let Some(version) = version {
-                    format!("Restore snapshot {} (version {})", uuid, version)
-                } else {
-                    format!("Restore snapshot {}", uuid)
-                }
+                format!("Restore snapshot {} (version {})", uuid, version)
             }
             _ => "Unknown reason".into(),
         };
@@ -153,13 +149,8 @@ pub async fn process_request(
         }
         Request::ListSnapshots => handle_list_snapshots(&ctx).await,
         Request::RestoreSnapshot { version, uuid } => {
-            if let Some(version) = version {
-                handle_restore_snapshot(ctx, uuid, version).await
-            } else {
-                handle_restore_snapshot(ctx, uuid, 0).await
-            }
+            handle_restore_snapshot(ctx, uuid, version).await
         }
-        Request::GetSnapshot { uuid } => handle_get_snapshot(ctx, uuid).await,
     }
 }
 
@@ -420,19 +411,6 @@ async fn handle_restore_snapshot(ctx: Context, uuid: Uuid, target_version: u32) 
         Response::Ok(format!("Snapshot restored successfully to 'v{}'", target_version).into())
     } else {
         Response::Error("Vault is not loaded.".into())
-    }
-}
-
-async fn handle_get_snapshot(ctx: Context, uuid: uuid::Uuid) -> Response {
-    let st = ctx.state.read().await;
-
-    if let Some(vault) = &st.vault {
-        let snapshot = vault.history.iter().find(|s| s.uuid == uuid);
-
-        let data = serde_json::to_string(snapshot.unwrap()).unwrap();
-        Response::Ok(data)
-    } else {
-        Response::Error("Vault is locked".into())
     }
 }
 

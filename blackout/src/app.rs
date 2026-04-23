@@ -394,16 +394,19 @@ impl App {
     }
 
     pub fn restore_snapshot(&mut self, uuid: uuid::Uuid, version: Option<u32>) {
-        if version.is_none() {
-            if let Ok(Response::Ok(data)) = crate::send_command(Request::GetSnapshot { uuid }) {
-                if let Ok(snapshot) = serde_json::from_str::<VaultSnapshot>(&data) {
-                    self.restore_snapshot(uuid, Some(snapshot.version));
-                    return;
-                }
-            }
-        }
+        let version_default = version.unwrap_or(
+            self.snapshots
+                .iter()
+                .filter(|s| s.uuid == uuid)
+                .max_by_key(|s| s.version)
+                .map(|s| s.version)
+                .unwrap_or(0),
+        );
 
-        match crate::send_command(Request::RestoreSnapshot { uuid, version }) {
+        match crate::send_command(Request::RestoreSnapshot {
+            version: version.unwrap_or(version_default),
+            uuid,
+        }) {
             Ok(Response::Ok(_)) => {
                 self.load_entries();
                 self.state = AppState::EntriesList;
