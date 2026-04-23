@@ -19,7 +19,7 @@ pub enum AppState {
     VaultLocked,
     EntriesList,
     NewEntryForm(Vec<FieldConfig>),
-    ViewEntry(Vec<FieldConfig>),
+    ViewEntry(Vec<FieldConfig>, uuid::Uuid),
     UpdateEntry(Vec<FieldConfig>),
     Settings(SettingsState),
     ChangeMasterPassword(Vec<FieldConfig>),
@@ -280,7 +280,7 @@ impl App {
                 self.load_entries();
                 self.state = AppState::EntriesList;
                 self.set_status("Entry successfully added!".into());
-                self.reset_form();
+                self.form_state.clear();
             }
             Ok(Response::Error(e)) => self.log_error("Add Entry", e),
             Err(_) => self.set_status("Communication error".into()),
@@ -308,7 +308,7 @@ impl App {
                 self.load_entries();
                 self.state = AppState::EntriesList;
                 self.set_status("Entry successfully added!".into());
-                self.reset_form();
+                self.form_state.clear();
             }
             Ok(Response::Error(e)) => self.log_error("Add Entry", e),
             Err(_) => self.set_status("Communication error".into()),
@@ -346,7 +346,7 @@ impl App {
             Ok(Response::Ok(_)) => {
                 self.state = AppState::EntriesList;
                 self.set_status("Master password updated!".into());
-                self.reset_form();
+                self.form_state.clear();
             }
             Ok(Response::Error(e)) => self.log_error("Update Master Pass", e),
             Err(_) => self.set_status("Communication error".into()),
@@ -371,14 +371,6 @@ impl App {
         );
         let _ = std::fs::write("blackout_debug.txt", debug_info);
         self.set_status(format!("{} failed. Check debug log.", action));
-    }
-
-    pub fn reset_form(&mut self) {
-        for field in self.form_state.fields.iter_mut() {
-            field.clear();
-        }
-        self.form_state.current_index = 0;
-        self.table_state.select(Some(0));
     }
 
     pub fn delete_entry(&mut self, uuid: uuid::Uuid) {
@@ -432,6 +424,8 @@ impl App {
     pub fn open_form(&mut self, new_state: AppState, uuid: Option<uuid::Uuid>) {
         if let Some(uuid) = uuid {
             self.populate_form(uuid);
+        } else {
+            self.form_state.clear();
         }
 
         self.state = new_state;

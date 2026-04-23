@@ -33,7 +33,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         AppState::VaultLocked => components::render_locked_vault(frame, area),
 
         AppState::EntriesList => views::entry_list::render(frame, area, app),
-        AppState::ViewEntry(fields) => {
+        AppState::ViewEntry(fields, ..) => {
             components::render_form(frame, area, "View entry", fields, app)
         }
         AppState::Settings(_) => views::settings::render(frame, area, app),

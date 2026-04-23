@@ -128,20 +128,17 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                         },
                     ];
                     let uuid = app.get_selected_entry_id();
-                    app.open_form(AppState::ViewEntry(fields), uuid);
+                    app.open_form(AppState::ViewEntry(fields, uuid.unwrap_or_default()), uuid);
                 }
                 _ => {}
             }
         }
-        AppState::ViewEntry(ref mut fields) => match key.code {
+        AppState::ViewEntry(ref mut fields, uuid) => match key.code {
             KeyCode::Backspace => {
-                let entry_id = app.get_selected_entry_id();
-                if let Some(entry_id) = entry_id {
-                    app.state = AppState::ConfirmAction {
-                        action: PendingAction::DeleteEntry(entry_id.clone()),
-                        previous_state: Box::new(AppState::EntriesList),
-                    };
-                }
+                app.state = AppState::ConfirmAction {
+                    action: PendingAction::DeleteEntry(uuid),
+                    previous_state: Box::new(AppState::EntriesList),
+                };
             }
             KeyCode::Enter => {
                 let content = app.form_state.fields[app.form_state.current_index].clone();
@@ -165,8 +162,7 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                         show_password: false,
                     },
                 ];
-                let uuid = app.get_selected_entry_id();
-                app.open_form(AppState::UpdateEntry(fields), uuid);
+                app.open_form(AppState::UpdateEntry(fields), Some(uuid));
             }
             KeyCode::Tab => {
                 app.form_state.current_index = (app.form_state.current_index + 1) % fields.len();
@@ -179,14 +175,14 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 }
             }
             KeyCode::F(2) => {
-                if let AppState::ViewEntry(fields) = &mut app.state {
+                if let AppState::ViewEntry(fields, ..) = &mut app.state {
                     for field in fields.iter_mut() {
                         field.show_password = !field.show_password;
                     }
                 }
             }
             KeyCode::Esc => {
-                app.reset_form();
+                app.form_state.clear();
                 app.state = AppState::EntriesList;
             }
             _ => {}
@@ -244,7 +240,7 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 app.submit_form();
             }
             KeyCode::Esc => {
-                app.reset_form();
+                app.form_state.clear();
                 app.state = AppState::EntriesList;
             }
             _ => {}

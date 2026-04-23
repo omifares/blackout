@@ -17,7 +17,7 @@ pub fn get_helper_text(state: &AppState) -> Line<'static> {
         | AppState::ChangeMasterPassword(_) => {
             "(Esc) Back | (Tab) Next field | (BackTab) Prev field | (↵) Submiti | (F2) Toggle password visibility"
         }
-        AppState::ViewEntry(_) => {
+        AppState::ViewEntry(..) => {
             "(Esc) Back | (e) Edit | (⌫) Delete | (↵) Copy password | (F2) Toggle password visibility"
         }
         AppState::ConfirmAction { .. } => "(Esc) Cancel | (↵) Confirm",
