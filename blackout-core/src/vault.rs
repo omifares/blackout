@@ -9,7 +9,7 @@ use zeroize::Zeroize;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Entry {
-    pub id: Uuid,
+    pub uuid: Uuid,
     pub service: String,
     pub username: String,
 
@@ -22,6 +22,7 @@ pub struct Entry {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct VaultSnapshot {
+    pub uuid: Uuid,
     pub version: u32,
     pub created_at: DateTime<Local>,
     pub checksum: String,
@@ -43,7 +44,7 @@ pub struct Vault {
 impl Vault {
     pub fn add_entry(&mut self, service: String, user: String, pass: String) {
         let new_entry = Entry {
-            id: Uuid::now_v7(),
+            uuid: Uuid::now_v7(),
             service,
             username: user,
             secret: pass,
@@ -67,8 +68,8 @@ impl Vault {
     }
 
     pub fn get_entry_by_id(&self, id: Uuid) -> Option<Entry> {
-        self.entries.iter().find(|e| e.id == id).map(|e| Entry {
-            id: e.id,
+        self.entries.iter().find(|e| e.uuid == id).map(|e| Entry {
+            uuid: e.uuid,
             service: e.service.clone(),
             username: e.username.clone(),
             secret: e.secret.clone(),
@@ -77,7 +78,7 @@ impl Vault {
     }
 
     pub fn remove_entry(&mut self, id: Uuid) -> bool {
-        if let Some(pos) = self.entries.iter().position(|e| e.id == id) {
+        if let Some(pos) = self.entries.iter().position(|e| e.uuid == id) {
             self.entries.remove(pos);
             self.version += 1;
             true
@@ -93,7 +94,7 @@ impl Vault {
         user: Option<String>,
         pass: Option<String>,
     ) -> bool {
-        if let Some(entry) = self.entries.iter_mut().find(|e| e.id == id) {
+        if let Some(entry) = self.entries.iter_mut().find(|e| e.uuid == id) {
             if let Some(s) = service {
                 entry.service = s;
             }
@@ -114,7 +115,7 @@ impl Vault {
     pub fn get_secret(&self, id: Uuid) -> Option<String> {
         self.entries
             .iter()
-            .find(|e| e.id == id)
+            .find(|e| e.uuid == id)
             .map(|e| e.secret.clone())
     }
 

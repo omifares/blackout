@@ -33,11 +33,14 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         AppState::VaultLocked => components::render_locked_vault(frame, area),
 
         AppState::EntriesList => views::entry_list::render(frame, area, app),
-        AppState::ViewEntry(view) => views::entry_detail::render(frame, area, app, view),
+        AppState::ViewEntry(fields) => {
+            components::render_form(frame, area, "View entry", fields, app)
+        }
         AppState::Settings(_) => views::settings::render(frame, area, app),
         AppState::SnapshotList => views::snapshots::render(frame, area, app),
-
-        AppState::ConfirmEntryDelete => components::render_delete_confirmation(frame, area),
+        AppState::ConfirmAction { action, .. } => {
+            components::render_pending_action(frame, area, action)
+        }
         AppState::NewEntryForm(fields) => {
             components::render_form(frame, area, "New entry", fields, app)
         }
@@ -47,8 +50,6 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         AppState::ChangeMasterPassword(fields) => {
             components::render_form(frame, area, "Change Master Password", fields, app)
         }
-        // ...
-        _ => {}
     }
 
     // Status & Footer

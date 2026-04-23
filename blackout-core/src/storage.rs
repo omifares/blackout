@@ -197,6 +197,7 @@ impl Wallet {
         fs::rename(&temp_path, &file_path)?;
 
         Ok(VaultSnapshot {
+            uuid: uuid::Uuid::now_v7(),
             version,
             created_at: Local::now(),
             checksum,

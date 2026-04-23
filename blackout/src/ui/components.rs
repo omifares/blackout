@@ -15,12 +15,12 @@ pub fn get_helper_text(state: &AppState) -> Line<'static> {
         AppState::NewEntryForm(_)
         | AppState::UpdateEntry(_)
         | AppState::ChangeMasterPassword(_) => {
-            "(Esc) Back | (Tab) Next field | (BackTab) Prev field | (↵) Submit"
+            "(Esc) Back | (Tab) Next field | (BackTab) Prev field | (↵) Submiti | (F2) Toggle password visibility"
         }
         AppState::ViewEntry(_) => {
-            "(Esc) Back | (x) Lock | (e) Edit | (⌫) Delete | (↵) Copy password | (v) Toggle password visibility"
+            "(Esc) Back | (e) Edit | (⌫) Delete | (↵) Copy password | (F2) Toggle password visibility"
         }
-        AppState::ConfirmEntryDelete => "(Esc) Cancel | (↵) Confirm",
+        AppState::ConfirmAction { .. } => "(Esc) Cancel | (↵) Confirm",
         AppState::Settings(_) => "(Esc) Back | (↑ and ↓) Navigate | (↵) Select",
     };
     Line::from(text).dim()
@@ -56,16 +56,17 @@ pub fn render_locked_vault(frame: &mut Frame, area: Rect) {
     frame.render_widget(Line::from("Your vault is locked!").bold().centered(), area);
 }
 
-pub fn render_delete_confirmation(frame: &mut Frame, area: Rect) {
+pub fn render_pending_action(frame: &mut Frame, area: Rect, action: &PendingAction) {
+    let prompt = action.get_prompt_text();
     let [confirm_area] = area
         .centered(Constraint::Percentage(50), Constraint::Percentage(60))
         .layout(&Layout::vertical([Constraint::Percentage(50)]));
     let text = vec![
-        Line::from("Are you sure you want to delete this entry?").centered(),
+        Line::from(format!("{}", prompt)).centered(),
         Line::from(""),
-        Line::from(" [y]es  |  [n]o ").centered().bold(),
+        Line::from(" [Y/Enter]  |  [N/Esc] ").centered().bold(),
     ];
-    frame.render_widget(Paragraph::new(text), confirm_area);
+    frame.render_widget(Paragraph::new(text).wrap(Wrap { trim: true }), confirm_area);
 }
 
 pub fn render_form(f: &mut Frame, area: Rect, title: &str, fields: &[FieldConfig], app: &App) {

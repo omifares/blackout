@@ -40,8 +40,22 @@ pub struct FieldConfig {
     pub show_password: bool,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PendingAction {
-    DeleteEntry(String),
-    RestoreSnapshot(u32),
+    DeleteEntry(uuid::Uuid),
+    RestoreSnapshot(uuid::Uuid, u32),
+}
+
+impl PendingAction {
+    pub fn get_prompt_text(&self) -> String {
+        match self {
+            PendingAction::DeleteEntry(_id) => {
+                "Are you sure you want to delete this entry?".to_string()
+            }
+            PendingAction::RestoreSnapshot(_uuid, version) => format!(
+                "Warning: Restore snapshot v{}. This action will overwrite the current state. Continue?",
+                version
+            ),
+        }
+    }
 }

@@ -74,18 +74,18 @@ pub async fn process_request(
         }
 
         // PRE-FLIGHT
-        if let Request::RestoreSnapshot { target_version } = &req {
+        if let Request::RestoreSnapshot { version, uuid } = &req {
             if let Some(vault) = &st.vault {
                 let can_restore = vault
                     .history
                     .iter()
-                    .any(|s| s.version == *target_version && s.file_ref.is_some());
+                    .any(|s| s.uuid == *uuid && s.file_ref.is_some());
 
                 if !can_restore {
-                    error!("Can't load snapshot file v{}", target_version);
+                    error!("Can't load snapshot file for uuid {}", uuid);
                     return Response::Error(format!(
-                        "Fail to load snapshot from disk: v{}",
-                        target_version
+                        "Fail to load snapshot v{} from disk",
+                        version.unwrap_or(0)
                     ));
                 }
             }
@@ -109,8 +109,12 @@ pub async fn process_request(
                 entry_ctx.service.as_deref().unwrap_or("Unknown")
             ),
             Request::UpdateMasterPassword { .. } => "Master password rotation".to_string(),
-            Request::RestoreSnapshot { target_version } => {
-                format!("Restore snapshot {}", target_version).to_string()
+            Request::RestoreSnapshot { version, uuid } => {
+                if let Some(version) = version {
+                    format!("Restore snapshot {} (version {})", uuid, version)
+                } else {
+                    format!("Restore snapshot {}", uuid)
+                }
             }
             _ => "Unknown reason".into(),
         };
@@ -148,9 +152,14 @@ pub async fn process_request(
             handle_update_master_password(ctx, new_password).await
         }
         Request::ListSnapshots => handle_list_snapshots(&ctx).await,
-        Request::RestoreSnapshot { target_version } => {
-            handle_restore_snapshot(ctx, target_version).await
+        Request::RestoreSnapshot { version, uuid } => {
+            if let Some(version) = version {
+                handle_restore_snapshot(ctx, uuid, version).await
+            } else {
+                handle_restore_snapshot(ctx, uuid, 0).await
+            }
         }
+        Request::GetSnapshot { uuid } => handle_get_snapshot(ctx, uuid).await,
     }
 }
 
@@ -365,7 +374,7 @@ pub async fn handle_list_snapshots(ctx: &Context) -> Response {
     }
 }
 
-async fn handle_restore_snapshot(ctx: Context, target_version: u32) -> Response {
+async fn handle_restore_snapshot(ctx: Context, uuid: Uuid, target_version: u32) -> Response {
     let mut st = ctx.state.write().await;
     let password = st.master_password.clone().unwrap();
 
@@ -373,7 +382,7 @@ async fn handle_restore_snapshot(ctx: Context, target_version: u32) -> Response 
         let snapshot_path = match vault
             .history
             .iter()
-            .find(|s| s.version == target_version)
+            .find(|s| s.uuid == uuid)
             .and_then(|s| s.file_ref.as_ref())
         {
             Some(path) => path.clone(),
@@ -411,6 +420,19 @@ async fn handle_restore_snapshot(ctx: Context, target_version: u32) -> Response 
         Response::Ok(format!("Snapshot restored successfully to 'v{}'", target_version).into())
     } else {
         Response::Error("Vault is not loaded.".into())
+    }
+}
+
+async fn handle_get_snapshot(ctx: Context, uuid: uuid::Uuid) -> Response {
+    let st = ctx.state.read().await;
+
+    if let Some(vault) = &st.vault {
+        let snapshot = vault.history.iter().find(|s| s.uuid == uuid);
+
+        let data = serde_json::to_string(snapshot.unwrap()).unwrap();
+        Response::Ok(data)
+    } else {
+        Response::Error("Vault is locked".into())
     }
 }
 

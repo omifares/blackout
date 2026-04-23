@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use crate::app::{App, AppState};
-use crate::state::settings::{FieldConfig, SettingsOption, SettingsState};
+use crate::state::settings::{FieldConfig, PendingAction, SettingsOption, SettingsState};
 
 use crossterm::event::{KeyCode, KeyEvent};
 
@@ -68,7 +68,7 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                             show_password: false,
                         },
                     ];
-                    app.open_form(AppState::NewEntryForm(fields), false);
+                    app.open_form(AppState::NewEntryForm(fields), None);
                 }
                 KeyCode::Char('e') => {
                     let fields = vec![
@@ -88,7 +88,8 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                             show_password: false,
                         },
                     ];
-                    app.open_form(AppState::UpdateEntry(fields), true);
+                    let uuid = app.get_selected_entry_id();
+                    app.open_form(AppState::UpdateEntry(fields), uuid);
                 }
                 KeyCode::Char('?') => {
                     app.state = AppState::Settings(SettingsState::default());
@@ -100,25 +101,51 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                     app.next_index();
                 }
                 KeyCode::Backspace => {
-                    app.state = AppState::ConfirmEntryDelete;
+                    let entry_id = app.get_selected_entry_id();
+                    if let Some(entry_id) = entry_id {
+                        app.state = AppState::ConfirmAction {
+                            action: PendingAction::DeleteEntry(entry_id.clone()),
+                            previous_state: Box::new(AppState::EntriesList),
+                        };
+                    }
                 }
                 KeyCode::Enter => {
-                    app.view_selected_entry();
+                    let fields = vec![
+                        FieldConfig {
+                            label: "Service ".into(),
+                            is_password: false,
+                            show_password: false,
+                        },
+                        FieldConfig {
+                            label: "Username ".into(),
+                            is_password: false,
+                            show_password: false,
+                        },
+                        FieldConfig {
+                            label: "Password ".into(),
+                            is_password: true,
+                            show_password: false,
+                        },
+                    ];
+                    let uuid = app.get_selected_entry_id();
+                    app.open_form(AppState::ViewEntry(fields), uuid);
                 }
                 _ => {}
             }
         }
-        AppState::ViewEntry(ref mut view) => match key.code {
-            KeyCode::Char('x') => {
-                app.lock_vault();
-            }
+        AppState::ViewEntry(ref mut fields) => match key.code {
             KeyCode::Backspace => {
-                app.state = AppState::ConfirmEntryDelete;
+                let entry_id = app.get_selected_entry_id();
+                if let Some(entry_id) = entry_id {
+                    app.state = AppState::ConfirmAction {
+                        action: PendingAction::DeleteEntry(entry_id.clone()),
+                        previous_state: Box::new(AppState::EntriesList),
+                    };
+                }
             }
             KeyCode::Enter => {
-                if let Some(entry) = &app.detail_entry {
-                    app.copy_to_clipboard(entry.entry.secret.to_string());
-                }
+                let content = app.form_state.fields[app.form_state.current_index].clone();
+                app.copy_to_clipboard(content);
             }
             KeyCode::Char('e') => {
                 let fields = vec![
@@ -138,10 +165,25 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                         show_password: false,
                     },
                 ];
-                app.open_form(AppState::UpdateEntry(fields), true);
+                let uuid = app.get_selected_entry_id();
+                app.open_form(AppState::UpdateEntry(fields), uuid);
+            }
+            KeyCode::Tab => {
+                app.form_state.current_index = (app.form_state.current_index + 1) % fields.len();
+            }
+            KeyCode::BackTab => {
+                if app.form_state.current_index == 0 {
+                    app.form_state.current_index = fields.len() - 1;
+                } else {
+                    app.form_state.current_index -= 1;
+                }
             }
             KeyCode::F(2) => {
-                view.show_password = !view.show_password;
+                if let AppState::ViewEntry(fields) = &mut app.state {
+                    for field in fields.iter_mut() {
+                        field.show_password = !field.show_password;
+                    }
+                }
             }
             KeyCode::Esc => {
                 app.reset_form();
@@ -150,11 +192,17 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
             _ => {}
         },
 
-        AppState::ConfirmEntryDelete => match key.code {
-            KeyCode::Char('y') | KeyCode::Enter => {
-                app.delete_selected_entry();
-                app.state = AppState::EntriesList;
-            }
+        AppState::ConfirmAction { ref action, .. } => match key.code {
+            KeyCode::Char('y') | KeyCode::Enter => match action {
+                PendingAction::DeleteEntry(uuid) => {
+                    app.delete_entry(uuid.clone());
+                    app.state = AppState::EntriesList;
+                }
+                PendingAction::RestoreSnapshot(uuid, version) => {
+                    app.restore_snapshot(uuid.clone(), Some(*version));
+                    app.state = AppState::Settings(SettingsState::default());
+                }
+            },
             KeyCode::Char('n') | KeyCode::Esc => {
                 app.state = AppState::EntriesList;
             }
@@ -189,9 +237,8 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 }
             }
             KeyCode::F(2) => {
-                if app.form_state.is_password[app.form_state.current_index] {
-                    app.form_state.obscure_inputs = !app.form_state.obscure_inputs;
-                }
+                fields[app.form_state.current_index].show_password =
+                    !fields[app.form_state.current_index].show_password;
             }
             KeyCode::Enter => {
                 app.submit_form();
@@ -234,7 +281,7 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                                     show_password: false,
                                 },
                             ];
-                            app.open_form(AppState::ChangeMasterPassword(fields), false);
+                            app.open_form(AppState::ChangeMasterPassword(fields), None);
                         }
                         SettingsOption::SnapshotList => {
                             app.load_snapshots();
@@ -257,7 +304,14 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 app.next_index();
             }
             KeyCode::Enter => {
-                app.restore_selected_snapshot();
+                let uuid = app.get_selected_snapshot_uuid();
+                let version = app.get_selected_snapshot_version();
+                if let Some(entry_id) = uuid {
+                    app.state = AppState::ConfirmAction {
+                        action: PendingAction::RestoreSnapshot(entry_id.clone(), version.unwrap()),
+                        previous_state: Box::new(AppState::EntriesList),
+                    };
+                }
             }
             _ => {}
         },

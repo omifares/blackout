@@ -34,16 +34,36 @@ pub struct VaultSnapshotPayload {
 pub enum Request {
     Ping,
     Lock,
-    Unlock { master_password: String },
-    AddEntry { entry_ctx: EntryInput },
+    Unlock {
+        master_password: String,
+    },
+    AddEntry {
+        entry_ctx: EntryInput,
+    },
     ListEntries,
-    GetEntry { service: String },
-    GetEntryById { uuid: uuid::Uuid },
-    DeleteEntry { uuid: uuid::Uuid },
-    UpdateEntry { entry_ctx: EntryUpdateInput },
-    UpdateMasterPassword { new_password: String },
+    GetEntry {
+        service: String,
+    },
+    GetEntryById {
+        uuid: uuid::Uuid,
+    },
+    DeleteEntry {
+        uuid: uuid::Uuid,
+    },
+    UpdateEntry {
+        entry_ctx: EntryUpdateInput,
+    },
+    UpdateMasterPassword {
+        new_password: String,
+    },
     ListSnapshots,
-    RestoreSnapshot { target_version: u32 },
+    RestoreSnapshot {
+        version: Option<u32>,
+        uuid: uuid::Uuid,
+    },
+    GetSnapshot {
+        uuid: uuid::Uuid,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug)]

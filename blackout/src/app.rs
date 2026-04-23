@@ -4,7 +4,7 @@ use blackout_core::ipc::{
 
 use blackout_core::vault::{Entry, VaultSnapshot};
 
-use crate::state::{DetailEntryView, FieldConfig, FormState, SelectedItem, SettingsState};
+use crate::state::{FieldConfig, FormState, PendingAction, SelectedItem, SettingsState};
 
 use ratatui::widgets::TableState;
 
@@ -19,19 +19,21 @@ pub enum AppState {
     VaultLocked,
     EntriesList,
     NewEntryForm(Vec<FieldConfig>),
-    ViewEntry(DetailEntryView),
+    ViewEntry(Vec<FieldConfig>),
     UpdateEntry(Vec<FieldConfig>),
-    ConfirmEntryDelete,
     Settings(SettingsState),
     ChangeMasterPassword(Vec<FieldConfig>),
     SnapshotList,
+    ConfirmAction {
+        action: PendingAction,
+        previous_state: Box<AppState>,
+    },
 }
 
 pub struct App {
     pub state: AppState,
     pub vault_unlocked: bool,
     pub entries: Vec<Entry>,
-    pub detail_entry: Option<DetailEntryView>,
     pub input_buffer: String, // For password input
     pub table_state: TableState,
     pub status_message: Option<String>,
@@ -53,7 +55,6 @@ impl App {
             vault_unlocked: false,
             entries: vec![],
             input_buffer: String::new(),
-            detail_entry: None,
             table_state,
             status_message: None,
             status_time: Some(Instant::now()),
@@ -81,7 +82,7 @@ impl App {
 
     pub fn get_selected_item(&self) -> Option<SelectedItem<'_>> {
         match &self.state {
-            AppState::EntriesList | AppState::ConfirmEntryDelete | AppState::UpdateEntry(_) => self
+            AppState::EntriesList | AppState::UpdateEntry(_) => self
                 .table_state
                 .selected()
                 .and_then(|i| self.entries.get(i))
@@ -140,7 +141,6 @@ impl App {
     pub fn lock_application(&mut self) {
         self.vault_unlocked = false;
         self.entries.clear();
-        self.detail_entry = None;
         self.status_message = None;
         self.state = AppState::VaultLocked;
     }
@@ -161,7 +161,7 @@ impl App {
         }
     }
 
-    pub fn unlock_vault(&mut self, password: String) {
+    pub fn unlock_vault(&mut self, password: String) -> bool {
         match crate::send_command(Request::Unlock {
             master_password: password,
         }) {
@@ -169,13 +169,17 @@ impl App {
                 self.vault_unlocked = true;
                 self.state = AppState::EntriesList;
                 self.load_entries();
+                true
             }
             Ok(Response::Error(e)) => {
                 self.vault_unlocked = false;
                 self.set_status(e.to_string());
-                self.state = AppState::UnlockPrompt;
+                false
             }
-            Err(_) => {}
+            Err(_) => {
+                self.set_status("Communication error".into());
+                false
+            }
         }
     }
 
@@ -253,7 +257,7 @@ impl App {
         };
 
         let uuid = match item {
-            SelectedItem::Entry(entry) => entry.id,
+            SelectedItem::Entry(entry) => entry.uuid,
             _ => {
                 self.set_status("Type mismatch: Selected item is not an entry".into());
                 return;
@@ -312,9 +316,16 @@ impl App {
     }
 
     pub fn submit_form_update_master_password(&mut self) {
-        let old = &self.form_state.fields[0];
+        let old = self.form_state.fields[0].clone();
         let new: String = self.form_state.fields[1].clone();
         let confirm: String = self.form_state.fields[2].clone();
+
+        let pass_valid = self.unlock_vault(old.clone());
+
+        if !pass_valid {
+            self.set_status("Master Password invalid!".into());
+            return;
+        }
 
         if new.is_empty() || old.is_empty() {
             self.set_status("Fields cannot be empty!".into());
@@ -323,6 +334,12 @@ impl App {
 
         if new != confirm {
             self.set_status("New passwords do not match!".into());
+            return;
+        }
+
+        if new == old {
+            self.set_status("New password cannot be the same!".into());
+            return;
         }
 
         match crate::send_command(Request::UpdateMasterPassword { new_password: new }) {
@@ -364,11 +381,7 @@ impl App {
         self.table_state.select(Some(0));
     }
 
-    pub fn delete_selected_entry(&mut self) {
-        let Some(uuid) = self.get_selected_entry_id() else {
-            return;
-        };
-
+    pub fn delete_entry(&mut self, uuid: uuid::Uuid) {
         match crate::send_command(Request::DeleteEntry { uuid }) {
             Ok(Response::Ok(_)) => {
                 self.load_entries();
@@ -380,71 +393,28 @@ impl App {
         }
     }
 
-    pub fn restore_selected_snapshot(&mut self) {
-        let Some(target_version) = self.get_selected_snapshot_version() else {
-            return;
-        };
+    pub fn restore_snapshot(&mut self, uuid: uuid::Uuid, version: Option<u32>) {
+        if version.is_none() {
+            if let Ok(Response::Ok(data)) = crate::send_command(Request::GetSnapshot { uuid }) {
+                if let Ok(snapshot) = serde_json::from_str::<VaultSnapshot>(&data) {
+                    self.restore_snapshot(uuid, Some(snapshot.version));
+                    return;
+                }
+            }
+        }
 
-        match crate::send_command(Request::RestoreSnapshot { target_version }) {
+        match crate::send_command(Request::RestoreSnapshot { uuid, version }) {
             Ok(Response::Ok(_)) => {
                 self.load_entries();
                 self.state = AppState::EntriesList;
-                self.set_status(format!("Snapshot v{} restored!", target_version));
+                self.set_status(format!("Snapshot v{} restored!", version.unwrap_or(0)));
             }
             Ok(Response::Error(e)) => self.log_error("Restore Snapshot", e),
             Err(_) => {}
         }
     }
 
-    pub fn view_selected_entry(&mut self) {
-        let Some(item) = self.get_selected_item() else {
-            self.set_status("No entry selected for update".into());
-            return;
-        };
-
-        let uuid = match item {
-            SelectedItem::Entry(entry) => entry.id,
-            _ => {
-                self.set_status("Type mismatch: Selected item is not an entry".into());
-                return;
-            }
-        };
-
-        if let Ok(Response::Ok(data)) = crate::send_command(Request::GetEntryById { uuid }) {
-            if let Ok(entry) = serde_json::from_str::<Entry>(&data) {
-                let entry_clone = entry.clone();
-                self.detail_entry = Some(DetailEntryView {
-                    entry: entry_clone,
-                    show_password: false,
-                });
-                self.state = AppState::ViewEntry(DetailEntryView {
-                    entry,
-                    show_password: false,
-                });
-            }
-        } else {
-            let debug_info = format!(
-                "View Entry Error: Failed to get entry details for ID: {}",
-                uuid
-            );
-            let _ = std::fs::write("blackout_debug.txt", debug_info);
-        }
-    }
-
-    pub fn populate_form(&mut self) {
-        let Some(item) = self.get_selected_item() else {
-            self.set_status("No entry selected for update".into());
-            return;
-        };
-
-        let uuid = match item {
-            SelectedItem::Entry(entry) => entry.id,
-            _ => {
-                self.set_status("Type mismatch: Selected item is not an entry".into());
-                return;
-            }
-        };
-
+    pub fn populate_form(&mut self, uuid: uuid::Uuid) {
         if let Ok(Response::Ok(data)) = crate::send_command(Request::GetEntryById { uuid }) {
             if let Ok(entry) = serde_json::from_str::<Entry>(&data) {
                 self.form_state.fields[0] = entry.service.to_string();
@@ -456,9 +426,9 @@ impl App {
         }
     }
 
-    pub fn open_form(&mut self, new_state: AppState, populate: bool) {
-        if populate {
-            self.populate_form();
+    pub fn open_form(&mut self, new_state: AppState, uuid: Option<uuid::Uuid>) {
+        if let Some(uuid) = uuid {
+            self.populate_form(uuid);
         }
 
         self.state = new_state;
@@ -476,7 +446,7 @@ impl App {
                 if let Some(mut stdin) = process.stdin.take() {
                     let _ = stdin.write_all(text.as_bytes());
                 }
-                self.set_status("Password copied to clipboard!".into());
+                self.set_status("Copied to clipboard!".into());
             }
             Err(e) => {
                 let _ = std::fs::write("blackout_debug.txt", format!("Erro wl-copy: {}", e));
@@ -485,12 +455,11 @@ impl App {
         }
     }
 
-    // Helper para Entradas
     pub fn get_selected_entry_id(&mut self) -> Option<uuid::Uuid> {
-        let item = self.get_selected_item()?; // Retorna None silenciosamente se não houver item
+        let item = self.get_selected_item()?;
 
         match item {
-            SelectedItem::Entry(entry) => Some(entry.id),
+            SelectedItem::Entry(entry) => Some(entry.uuid),
             _ => {
                 self.set_status("Type mismatch: Selected item is not an entry".into());
                 None
@@ -498,7 +467,18 @@ impl App {
         }
     }
 
-    // Helper para Snapshots
+    pub fn get_selected_snapshot_uuid(&mut self) -> Option<uuid::Uuid> {
+        let item = self.get_selected_item()?;
+
+        match item {
+            SelectedItem::Snapshot(snap) => Some(snap.uuid),
+            _ => {
+                self.set_status("Type mismatch: Selected item is not a snapshot".into());
+                None
+            }
+        }
+    }
+
     pub fn get_selected_snapshot_version(&mut self) -> Option<u32> {
         let item = self.get_selected_item()?;
 

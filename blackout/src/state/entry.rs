@@ -15,7 +15,7 @@ pub struct ListEntryView(pub Entry);
 
 impl EntryView for ListEntryView {
     fn _id(&self) -> &Uuid {
-        &self.0.id
+        &self.0.uuid
     }
     fn service(&self) -> &str {
         &self.0.service
@@ -26,10 +26,4 @@ impl EntryView for ListEntryView {
     fn updated_at(&self) -> DateTime<Local> {
         self.0.updated_at
     }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct DetailEntryView {
-    pub entry: Entry,
-    pub show_password: bool,
 }
