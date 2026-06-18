@@ -7,6 +7,7 @@ use blackout_core::config::DaemonConfig;
 use blackout_core::ipc::{Request, Response};
 use crossterm::event::{self, Event, KeyCode};
 
+use std::env;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
@@ -26,7 +27,13 @@ fn main() -> Result<()> {
 }
 
 pub fn send_command(req: Request) -> Result<Response> {
-    let mut stream = UnixStream::connect(blackout_core::ipc::get_socket_path())?;
+    let args: Vec<String> = env::args().collect();
+    let dev_mode = args.contains(&"--dev".to_string());
+    let mut stream = if dev_mode {
+        UnixStream::connect(blackout_core::ipc::get_socket_path().with_extension("sock.dev"))?
+    } else {
+        UnixStream::connect(blackout_core::ipc::get_socket_path())?
+    };
 
     let req_json = serde_json::to_string(&req)? + "\n";
     stream.write_all(req_json.as_bytes())?;

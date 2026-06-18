@@ -8,6 +8,7 @@ use crate::state::{FieldConfig, FormState, PendingAction, SelectedItem, Settings
 
 use ratatui::widgets::TableState;
 
+use std::env;
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::time::Instant;
@@ -43,12 +44,16 @@ pub struct App {
     pub vault_version: u32,
     pub form_state: FormState,
     pub snapshots: Vec<VaultSnapshot>,
+    pub dev_mode: bool,
 }
 
 impl App {
     pub fn new() -> Self {
         let mut table_state = TableState::default();
         table_state.select(Some(0));
+
+        let args: Vec<String> = env::args().collect();
+        let dev_mode = args.contains(&"--dev".to_string());
 
         Self {
             state: AppState::InitialCheck,
@@ -63,6 +68,7 @@ impl App {
             vault_version: 0,
             form_state: FormState::new(),
             snapshots: vec![],
+            dev_mode: dev_mode,
         }
     }
 

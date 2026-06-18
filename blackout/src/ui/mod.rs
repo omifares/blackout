@@ -6,7 +6,6 @@ use components::*;
 use prelude::*;
 
 pub fn render(frame: &mut Frame, app: &mut App) {
-    let version = env!("CARGO_PKG_VERSION");
     let vertical = Layout::vertical([
         Constraint::Length(1),
         Constraint::Fill(1),
@@ -19,10 +18,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     let [top, area, status_area, bottom] = frame.area().layout(&vertical);
 
-    frame.render_widget(
-        Line::from(Span::from(format!("Blackout - v{version}")).bold()).centered(),
-        top,
-    );
+    frame.render_widget(get_title_text(app).bold().centered(), top);
 
     match &app.state {
         AppState::InitialCheck => components::render_initial_check(frame, area),

@@ -34,7 +34,7 @@ pub struct Daemon {
 }
 
 impl Daemon {
-    pub fn new(storage: Arc<Wallet>) -> Self {
+    pub fn new(storage: Arc<Wallet>, dev_mode: bool) -> Self {
         let config = DaemonConfig::load_config();
         let state = DaemonState {
             vault: None,
@@ -45,8 +45,13 @@ impl Daemon {
             auto_lock_timeout: Duration::from_secs(config.auto_lock_timeout),
         };
 
+        let dev_mode = dev_mode;
         let uid = unsafe { libc::geteuid() };
-        let socket_path = blackout_core::ipc::get_socket_path();
+        let socket_path = if dev_mode {
+            blackout_core::ipc::get_socket_path().with_extension("sock.dev")
+        } else {
+            blackout_core::ipc::get_socket_path()
+        };
 
         Self {
             storage,

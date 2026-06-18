@@ -111,3 +111,14 @@ pub fn render_form(f: &mut Frame, area: Rect, title: &str, fields: &[FieldConfig
 
     f.render_widget(Paragraph::new(lines), form_area);
 }
+
+pub fn get_title_text(app: &App) -> Line<'static> {
+    let version = env!("CARGO_PKG_VERSION");
+    let mut title_text = Line::from(Span::from(format!("Blackout - v{version}")));
+
+    if app.dev_mode {
+        title_text.push_span(Span::raw(" - DEV MODE"))
+    }
+
+    title_text
+}

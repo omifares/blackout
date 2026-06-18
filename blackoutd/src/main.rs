@@ -16,8 +16,8 @@ async fn main() {
         .init();
 
     let args: Vec<String> = env::args().collect();
-    let use_mlock = args.contains(&"--mlock".to_string());
 
+    let use_mlock = args.contains(&"--mlock".to_string());
     if use_mlock {
         prevent_memory_swapping()
             .expect("Panic: Cannot lock memory with mlockall. This is critical for security.");
@@ -27,10 +27,13 @@ async fn main() {
         );
     }
 
-    let daemon = Daemon::new(Arc::new(Wallet::init()));
+    let dev_mode = args.contains(&"--dev".to_string());
+    if dev_mode {
+        info!("Starting Blackoutd in DEV MODE (Ephemeral storage)");
+    }
 
-    info!("Starting daemon...");
-
+    info!("Starting Blackoutd...");
+    let daemon = Daemon::new(Arc::new(Wallet::init(dev_mode)), dev_mode);
     daemon.run().await.unwrap();
 }
 

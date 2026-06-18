@@ -26,14 +26,21 @@ pub struct Wallet {
 }
 
 impl Wallet {
-    pub fn init() -> Self {
-        // $XDG_DATA_LOCAL_DIR/share/blackout
-        let path = dirs::data_local_dir()
-            .unwrap_or_else(|| dirs::home_dir().unwrap().join(".local/share"))
-            .join("blackout");
-        if !path.exists() {
-            fs::create_dir_all(&path).expect("Failed to create directory");
-        }
+    pub fn init(dev_mode: bool) -> Self {
+        let path = if dev_mode {
+            std::env::temp_dir().join("blackout-dev")
+        } else {
+            dirs::data_local_dir()
+                .unwrap_or_else(|| {
+                    dirs::home_dir()
+                        .expect("Failed to find home dir")
+                        .join(".local/share")
+                })
+                .join("blackout")
+        };
+
+        fs::create_dir_all(&path).expect("Failed to create directory");
+
         Self { path }
     }
 
