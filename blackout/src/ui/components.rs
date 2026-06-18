@@ -1,3 +1,5 @@
+use ratatui::layout::Position;
+
 use crate::ui::prelude::*;
 
 pub fn render_initial_check(frame: &mut Frame, area: Rect) {
@@ -7,7 +9,7 @@ pub fn render_initial_check(frame: &mut Frame, area: Rect) {
 pub fn get_helper_text(state: &AppState) -> Line<'static> {
     let text = match state {
         AppState::InitialCheck | AppState::SnapshotList => "(Esc) Quit",
-        AppState::UnlockPrompt => "(↵) Submit | (Esc) Quit",
+        AppState::UnlockPrompt(_) => "(↵) Submit | (Esc) Quit",
         AppState::VaultLocked => "(Esc) Quit | (any) Unlock vault",
         AppState::EntriesList => {
             "(Esc) Quit | (e) Edit | (↵) Select | (⌫) Delete | (n) New | (x) Lock | (?) Options "
@@ -31,22 +33,6 @@ pub fn get_status_text(app: &App) -> Line<'_> {
         Some(msg) => Line::from(msg.as_str()).dim(),
         None => Line::from(format!("vault v{}", app.vault_version)).dim(),
     }
-}
-
-pub fn render_unlock_prompt(frame: &mut Frame, area: Rect, input: &str, app: &App) {
-    let horizontal = Layout::horizontal([Constraint::Length(22), Constraint::Fill(1)]);
-    let [label_area, pass_area] = area
-        .centered(Constraint::Percentage(50), Constraint::Percentage(20))
-        .layout(&horizontal);
-
-    let label = Line::from("Enter vault password:").bold();
-    let cursor = if app.is_cursor_visible() { "█" } else { " " };
-    let mask = "*".repeat(input.chars().count());
-    let pass_display = format!("{}{}", mask, cursor);
-    let pass_paragraph = Paragraph::new(pass_display);
-
-    frame.render_widget(label, label_area);
-    frame.render_widget(pass_paragraph, pass_area);
 }
 
 pub fn render_locked_vault(frame: &mut Frame, area: Rect) {
@@ -83,22 +69,27 @@ pub fn render_form(f: &mut Frame, area: Rect, title: &str, fields: &[FieldConfig
     )));
     lines.push(Line::from(""));
 
-    let cursor_char = if app.is_cursor_visible() { "█" } else { " " };
-
     for (i, field) in fields.iter().enumerate() {
-        let is_active = i == app.form_state.current_index;
+        let is_active = i == app.form_state.current_field;
         let mut content = app.get_input_for_field(i).to_string();
 
         if field.is_password && app.form_state.obscure_inputs && !field.show_password {
             content = "*".repeat(content.len());
         }
 
+        let label_formatted = format!("{}: ", field.label);
+
         if is_active {
             lines.push(Line::from(vec![
                 Span::styled(format!("{}: ", field.label), Style::default().bold()),
-                Span::raw(content),
-                Span::styled(cursor_char, Style::default()),
+                Span::raw(content.clone()),
             ]));
+            let cursor_x = form_area.x
+                + label_formatted.chars().count() as u16
+                + app.form_state.cursor_index as u16;
+            let cursor_y = form_area.y + 2 + (i as u16 * 2);
+
+            f.set_cursor_position(Position::new(cursor_x, cursor_y));
         } else {
             lines.push(Line::from(vec![
                 Span::styled(format!("{}: ", field.label), Style::default()),

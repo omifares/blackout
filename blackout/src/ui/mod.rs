@@ -23,8 +23,8 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     match &app.state {
         AppState::InitialCheck => components::render_initial_check(frame, area),
 
-        AppState::UnlockPrompt => {
-            components::render_unlock_prompt(frame, area, &app.input_buffer, app)
+        AppState::UnlockPrompt(field) => {
+            components::render_form(frame, area, "Unlock Vault", &[field.clone()], app)
         }
         AppState::VaultLocked => components::render_locked_vault(frame, area),
 

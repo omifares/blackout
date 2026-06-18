@@ -40,6 +40,33 @@ pub struct FieldConfig {
     pub show_password: bool,
 }
 
+impl Default for FieldConfig {
+    fn default() -> Self {
+        Self {
+            label: String::new(),
+            is_password: false,
+            show_password: false,
+        }
+    }
+}
+
+impl FieldConfig {
+    pub fn text(label: &str) -> Self {
+        Self {
+            label: label.into(),
+            ..Default::default()
+        }
+    }
+
+    pub fn password(label: &str) -> Self {
+        Self {
+            label: label.into(),
+            is_password: true,
+            ..Default::default()
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum PendingAction {
     DeleteEntry(uuid::Uuid),

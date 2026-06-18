@@ -16,7 +16,7 @@ use std::time::Instant;
 #[derive(PartialEq, Debug, Clone)]
 pub enum AppState {
     InitialCheck,
-    UnlockPrompt,
+    UnlockPrompt(FieldConfig),
     VaultLocked,
     EntriesList,
     NewEntryForm(Vec<FieldConfig>),
@@ -35,7 +35,6 @@ pub struct App {
     pub state: AppState,
     pub vault_unlocked: bool,
     pub entries: Vec<Entry>,
-    pub input_buffer: String, // For password input
     pub table_state: TableState,
     pub status_message: Option<String>,
     pub status_time: Option<Instant>,
@@ -59,7 +58,6 @@ impl App {
             state: AppState::InitialCheck,
             vault_unlocked: false,
             entries: vec![],
-            input_buffer: String::new(),
             table_state,
             status_message: None,
             status_time: Some(Instant::now()),
@@ -70,15 +68,6 @@ impl App {
             snapshots: vec![],
             dev_mode: dev_mode,
         }
-    }
-
-    pub fn is_cursor_visible(&self) -> bool {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis()
-            % 1000
-            < 500 // interval: 500ms
     }
 
     pub fn set_status(&mut self, msg: String) {
@@ -115,7 +104,7 @@ impl App {
     pub fn check_vault_status(&mut self) {
         if matches!(
             self.state,
-            AppState::UnlockPrompt | AppState::UpdateEntry(_) | AppState::NewEntryForm(_)
+            AppState::UnlockPrompt(_) | AppState::UpdateEntry(_) | AppState::NewEntryForm(_)
         ) {
             return;
         }
@@ -192,7 +181,7 @@ impl App {
     pub fn lock_vault(&mut self) {
         let _ = crate::send_command(Request::Lock);
         self.vault_unlocked = false;
-        self.state = AppState::UnlockPrompt;
+        self.state = AppState::UnlockPrompt(FieldConfig::password("Password"));
     }
 
     pub fn load_entries(&mut self) {
