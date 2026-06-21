@@ -5,10 +5,12 @@ use blackout_core::generator::{
 };
 
 
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SettingsOption {
     ChangeMasterPassword,
     SnapshotList,
+    PasswordGenerator,
 }
 
 impl SettingsOption {
@@ -16,6 +18,7 @@ impl SettingsOption {
         match self {
             Self::ChangeMasterPassword => "Change Master Password",
             Self::SnapshotList => "Snapshots",
+            Self::PasswordGenerator => "Password Generator",
         }
     }
 }
@@ -33,6 +36,7 @@ impl Default for SettingsState {
             options: vec![
                 SettingsOption::ChangeMasterPassword,
                 SettingsOption::SnapshotList,
+                SettingsOption::PasswordGenerator,
             ],
         }
     }

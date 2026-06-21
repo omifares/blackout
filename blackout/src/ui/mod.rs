@@ -47,7 +47,17 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             components::render_form(frame, area, "Change Master Password", fields, app)
         }
         AppState::PasswordGenerator(state) => {
-            components::render_password_generator(frame, area, &state, app)
+            components::render_password_generator_form(frame, area, "Pass Generator", &vec![
+                FieldConfig::text("Length"),
+                FieldConfig::text("Mode"),
+                FieldConfig::text("Word Count"),
+                FieldConfig::text("Separator"),
+                FieldConfig::text("Capitalize"),
+                FieldConfig::text("Uppercase"),
+                FieldConfig::text("Lowercase"),
+                FieldConfig::text("Numbers"),
+                FieldConfig::text("Symbols"),
+            ], &state.form_state, state.generated_password.as_ref());
         }
     }
 

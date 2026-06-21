@@ -98,11 +98,31 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                             .to_string(),
                             config.word_count.to_string(),
                             config.separator.to_string(),
-                            config.capitalize.to_string(),
-                            config.uppercase.to_string(),
-                            config.lowercase.to_string(),
-                            config.numbers.to_string(),
-                            config.symbols.to_string(),
+                            if config.capitalize {
+                                "[x]".to_string()
+                            } else {
+                                "[ ]".to_string()
+                            },
+                            if config.uppercase {
+                                "[x]".to_string()
+                            } else {
+                                "[ ]".to_string()
+                            },
+                            if config.lowercase {
+                                "[x]".to_string()
+                            } else {
+                                "[ ]".to_string()
+                            },
+                            if config.numbers {
+                                "[x]".to_string()
+                            } else {
+                                "[ ]".to_string()
+                            },
+                            if config.symbols {
+                                "[x]".to_string()
+                            } else {
+                                "[ ]".to_string()
+                            },
                         ],
                         current_field: 0,
                         cursor_index: 0,
@@ -355,6 +375,54 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                             app.load_snapshots();
                             app.state = AppState::SnapshotList
                         }
+                        SettingsOption::PasswordGenerator => {
+                            let config = GeneratorConfig::default();
+                            let form_state = FormState {
+                                fields: vec![
+                                    config.length.to_string(),
+                                    match config.mode {
+                                        GeneratorMode::RandomChars => "RandomChars",
+                                        GeneratorMode::Passphrase => "Passphrase",
+                                    }
+                                    .to_string(),
+                                    config.word_count.to_string(),
+                                    config.separator.to_string(),
+                                    if config.capitalize {
+                                        "[x]".to_string()
+                                    } else {
+                                        "[ ]".to_string()
+                                    },
+                                    if config.uppercase {
+                                        "[x]".to_string()
+                                    } else {
+                                        "[ ]".to_string()
+                                    },
+                                    if config.lowercase {
+                                        "[x]".to_string()
+                                    } else {
+                                        "[ ]".to_string()
+                                    },
+                                    if config.numbers {
+                                        "[x]".to_string()
+                                    } else {
+                                        "[ ]".to_string()
+                                    },
+                                    if config.symbols {
+                                        "[x]".to_string()
+                                    } else {
+                                        "[ ]".to_string()
+                                    },
+                                ],
+                                current_field: 0,
+                                cursor_index: 0,
+                                obscure_inputs: false,
+                            };
+                            app.state = AppState::PasswordGenerator(PasswordGeneratorState {
+                                config,
+                                generated_password: None,
+                                form_state,
+                            });
+                        }
                     }
                 }
             }
@@ -448,68 +516,152 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 }
                 KeyCode::Left => {
                     if let AppState::PasswordGenerator(state) = &mut app.state {
-                        if state.form_state.cursor_index > 0 {
-                            state.form_state.cursor_index -= 1;
+                        match state.form_state.current_field {
+                            1 => {
+                                // mode field
+                                state.config.mode = match state.config.mode {
+                                    GeneratorMode::RandomChars => GeneratorMode::Passphrase,
+                                    GeneratorMode::Passphrase => GeneratorMode::RandomChars,
+                                };
+                                state.form_state.fields[1] = match state.config.mode {
+                                    GeneratorMode::RandomChars => "RandomChars",
+                                    GeneratorMode::Passphrase => "Passphrase",
+                                }
+                                .to_string();
+                            }
+                            4..=8 => {
+                                // boolean fields
+                                let idx = state.form_state.current_field;
+                                let current = state.form_state.fields[idx].as_str();
+                                let new_bool = if current == "[x]" { false } else { true };
+                                state.form_state.fields[idx] = if new_bool {
+                                    "[x]".to_string()
+                                } else {
+                                    "[ ]".to_string()
+                                };
+                            }
+                            _ => {
+                                // Move cursor left
+                                if state.form_state.cursor_index > 0 {
+                                    state.form_state.cursor_index -= 1;
+                                }
+                            }
                         }
                     }
                 }
                 KeyCode::Right => {
                     if let AppState::PasswordGenerator(state) = &mut app.state {
-                        if let Some(field_text) = state
-                            .form_state
-                            .fields
-                            .get_mut(state.form_state.current_field)
-                        {
-                            if state.form_state.cursor_index < field_text.len() {
-                                state.form_state.cursor_index += 1;
+                        match state.form_state.current_field {
+                            1 => {
+                                // mode field
+                                state.config.mode = match state.config.mode {
+                                    GeneratorMode::RandomChars => GeneratorMode::Passphrase,
+                                    GeneratorMode::Passphrase => GeneratorMode::RandomChars,
+                                };
+                                state.form_state.fields[1] = match state.config.mode {
+                                    GeneratorMode::RandomChars => "RandomChars",
+                                    GeneratorMode::Passphrase => "Passphrase",
+                                }
+                                .to_string();
+                            }
+                            4..=8 => {
+                                // boolean fields
+                                let idx = state.form_state.current_field;
+                                let current = state.form_state.fields[idx].as_str();
+                                let new_bool = if current == "[x]" { false } else { true };
+                                state.form_state.fields[idx] = if new_bool {
+                                    "[x]".to_string()
+                                } else {
+                                    "[ ]".to_string()
+                                };
+                            }
+                            _ => {
+                                if let Some(field_text) = state
+                                    .form_state
+                                    .fields
+                                    .get_mut(state.form_state.current_field)
+                                {
+                                    if state.form_state.cursor_index < field_text.len() {
+                                        state.form_state.cursor_index += 1;
+                                    }
+                                }
                             }
                         }
                     }
                 }
                 KeyCode::Char(c) => {
                     if let AppState::PasswordGenerator(state) = &mut app.state {
-                        if let Some(field_text) = state
-                            .form_state
-                            .fields
-                            .get_mut(state.form_state.current_field)
-                        {
-                            let mut chars: Vec<char> = field_text.chars().collect();
-                            let cursor = state.form_state.cursor_index;
-                            chars.insert(cursor.min(chars.len()), c);
-                            *field_text = chars.into_iter().collect();
-                            state.form_state.cursor_index += 1;
+                        if state.form_state.current_field == 1 {
+                            // Ignore input for mode field
+                        } else if (4..=8).contains(&state.form_state.current_field) {
+                            if c == ' ' {
+                                // Toggle checkbox
+                                let idx = state.form_state.current_field;
+                                let current = state.form_state.fields[idx].as_str();
+                                let new_bool = if current == "[x]" { false } else { true };
+                                state.form_state.fields[idx] = if new_bool {
+                                    "[x]".to_string()
+                                } else {
+                                    "[ ]".to_string()
+                                };
+                            }
+                            // Ignore other input
+                        } else {
+                            if let Some(field_text) = state
+                                .form_state
+                                .fields
+                                .get_mut(state.form_state.current_field)
+                            {
+                                let mut chars: Vec<char> = field_text.chars().collect();
+                                let cursor = state.form_state.cursor_index;
+                                chars.insert(cursor.min(chars.len()), c);
+                                *field_text = chars.into_iter().collect();
+                                state.form_state.cursor_index += 1;
+                            }
                         }
                     }
                 }
                 KeyCode::Backspace => {
                     if let AppState::PasswordGenerator(state) = &mut app.state {
-                        if let Some(field_text) = state
-                            .form_state
-                            .fields
-                            .get_mut(state.form_state.current_field)
+                        if state.form_state.current_field == 1
+                            || (4..=8).contains(&state.form_state.current_field)
                         {
-                            let mut chars: Vec<char> = field_text.chars().collect();
-                            let cursor = state.form_state.cursor_index;
-                            if cursor > 0 && cursor <= chars.len() {
-                                chars.remove(cursor - 1);
-                                *field_text = chars.into_iter().collect();
-                                state.form_state.cursor_index -= 1;
+                            // Ignore backspace for mode and boolean fields
+                        } else {
+                            if let Some(field_text) = state
+                                .form_state
+                                .fields
+                                .get_mut(state.form_state.current_field)
+                            {
+                                let mut chars: Vec<char> = field_text.chars().collect();
+                                let cursor = state.form_state.cursor_index;
+                                if cursor > 0 && cursor <= chars.len() {
+                                    chars.remove(cursor - 1);
+                                    *field_text = chars.into_iter().collect();
+                                    state.form_state.cursor_index -= 1;
+                                }
                             }
                         }
                     }
                 }
                 KeyCode::Delete => {
                     if let AppState::PasswordGenerator(state) = &mut app.state {
-                        if let Some(field_text) = state
-                            .form_state
-                            .fields
-                            .get_mut(state.form_state.current_field)
+                        if state.form_state.current_field == 1
+                            || (4..=8).contains(&state.form_state.current_field)
                         {
-                            let mut chars: Vec<char> = field_text.chars().collect();
-                            let cursor = state.form_state.cursor_index;
-                            if cursor < chars.len() {
-                                chars.remove(cursor);
-                                *field_text = chars.into_iter().collect();
+                            // Ignore delete for mode and boolean fields
+                        } else {
+                            if let Some(field_text) = state
+                                .form_state
+                                .fields
+                                .get_mut(state.form_state.current_field)
+                            {
+                                let mut chars: Vec<char> = field_text.chars().collect();
+                                let cursor = state.form_state.cursor_index;
+                                if cursor < chars.len() {
+                                    chars.remove(cursor);
+                                    *field_text = chars.into_iter().collect();
+                                }
                             }
                         }
                     }

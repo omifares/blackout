@@ -7,6 +7,4 @@ pub use ratatui::{
 };
 
 pub use crate::app::{App, AppState};
-pub use crate::state::{
-    EntryView, FieldConfig, ListEntryView, PasswordGeneratorState, PendingAction, SnapshotView,
-};
+pub use crate::state::{EntryView, FieldConfig, ListEntryView, PendingAction, SnapshotView};

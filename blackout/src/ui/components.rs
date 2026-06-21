@@ -1,5 +1,6 @@
 use ratatui::layout::Position;
 
+use crate::state::FormState;
 use crate::ui::prelude::*;
 
 pub fn render_initial_check(frame: &mut Frame, area: Rect) {
@@ -8,7 +9,8 @@ pub fn render_initial_check(frame: &mut Frame, area: Rect) {
 
 pub fn get_helper_text(state: &AppState) -> Line<'static> {
     let text = match state {
-        AppState::InitialCheck | AppState::SnapshotList => "(Esc) Quit",
+        AppState::InitialCheck => "(Esc) Quit",
+        AppState::SnapshotList => "(Esc) Back | (↑ and ↓) Navigate | (↵) Select",
         AppState::UnlockPrompt(_) => "(↵) Submit | (Esc) Quit",
         AppState::VaultLocked => "(Esc) Quit | (F3) Gen Pass | (any) Unlock vault",
         AppState::EntriesList => {
@@ -17,14 +19,14 @@ pub fn get_helper_text(state: &AppState) -> Line<'static> {
         AppState::NewEntryForm(_)
         | AppState::UpdateEntry(_)
         | AppState::ChangeMasterPassword(_) => {
-            "(Esc) Back | (Tab) Next field | (BackTab) Prev field | (↵) Submiti | (F2) Toggle password visibility"
+            "(Esc) Back | (Tab) Next field | (BackTab) Prev field | (↵) Submit | (F2) Toggle password visibility"
         }
         AppState::ViewEntry(..) => {
             "(Esc) Back | (e) Edit | (⌫) Delete | (↵) Copy password | (F2) Toggle password visibility"
         }
         AppState::ConfirmAction { .. } => "(Esc) Cancel | (↵) Confirm",
         AppState::Settings(_) => "(Esc) Back | (↑ and ↓) Navigate | (↵) Select",
-        AppState::PasswordGenerator(_) => "(Esc) Back | (↵) Copy | (r) Regen | (Esc) Quit",
+        AppState::PasswordGenerator(_) => "(Esc) Back | (↵) Copy | (r) Regen",
     };
     Line::from(text).dim()
 }
@@ -104,6 +106,123 @@ pub fn render_form(f: &mut Frame, area: Rect, title: &str, fields: &[FieldConfig
     f.render_widget(Paragraph::new(lines), form_area);
 }
 
+pub fn render_password_generator_form(
+    f: &mut Frame,
+    area: Rect,
+    title: &str,
+    fields: &[FieldConfig],
+    form_state: &FormState,
+    generated_password: Option<&String>,
+) {
+    let horizontal = Layout::horizontal([Constraint::Fill(1)]);
+    let [form_area] = area
+        .centered(Constraint::Percentage(50), Constraint::Percentage(50))
+        .layout(&horizontal);
+
+    let vertical_chunks = if generated_password.is_some() {
+        Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(3),
+            Constraint::Fill(1),
+        ])
+    } else {
+        Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Fill(1),
+        ])
+    };
+    let [title_area, password_area, fields_area] = form_area.layout(&vertical_chunks);
+
+    // Render title
+    f.render_widget(Paragraph::new(title).bold().centered(), title_area);
+
+    // Render generated password
+    let mut pwd_line = Vec::new();
+    if let Some(password) = generated_password {
+        pwd_line.push(Line::from(Span::styled(
+            "Generated Password: ".to_string() + password.as_str(),
+            Style::default(),
+        )));
+    } else {
+        pwd_line.push(Line::from(Span::styled(
+            "Press 'r' to generate a password",
+            Style::default(),
+        )));
+    }
+
+    f.render_widget(Paragraph::new(pwd_line).centered(), password_area);
+
+    // Split fields area into two columns
+    let horizontal_chunks =
+        Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]);
+    let [left_area, right_area] = fields_area.layout(&horizontal_chunks);
+
+    // Determine split index
+    let left_len = fields.len() / 2;
+    let left_fields = &fields[0..left_len];
+    let right_fields = &fields[left_len..];
+
+    // Helper to render column lines (without cursor)
+    let render_column_lines =
+        |_area: Rect, fields_slice: &[FieldConfig], offset: usize| -> Vec<Line<'static>> {
+            let mut lines = Vec::new();
+            for (i, field) in fields_slice.iter().enumerate() {
+                let global_idx = offset + i;
+                let content = form_state
+                    .fields
+                    .get(global_idx)
+                    .map(|s| s.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                let display_content =
+                    if field.is_password && form_state.obscure_inputs && !field.show_password {
+                        "*".repeat(content.len())
+                    } else {
+                        content.clone()
+                    };
+
+                lines.push(Line::from(vec![
+                    Span::styled(format!("{}: ", field.label), Style::default()),
+                    Span::styled(display_content, Style::default()),
+                ]));
+
+                lines.push(Line::from(""));
+            }
+            lines
+        };
+
+    // Render left column
+    let left_lines = render_column_lines(left_area, left_fields, 0);
+    f.render_widget(Paragraph::new(left_lines), left_area);
+
+    // Render right column
+    let right_lines = render_column_lines(right_area, right_fields, left_len);
+    f.render_widget(Paragraph::new(right_lines), right_area);
+
+    // Set cursor if there is an active field
+    if form_state.current_field < fields.len() {
+        let active_in_left = form_state.current_field < left_len;
+        let local_idx = if active_in_left {
+            form_state.current_field
+        } else {
+            form_state.current_field - left_len
+        };
+        let area = if active_in_left {
+            left_area
+        } else {
+            right_area
+        };
+        let field = &fields[form_state.current_field];
+        let label_formatted = format!("{}: ", field.label);
+        let cursor_x =
+            area.x + label_formatted.chars().count() as u16 + form_state.cursor_index as u16;
+        let cursor_y = area.y + 2 + (local_idx as u16 * 2);
+        f.set_cursor_position(Position::new(cursor_x, cursor_y));
+    }
+}
+
 pub fn get_title_text(app: &App) -> Line<'static> {
     let version = env!("CARGO_PKG_VERSION");
     let mut title_text = Line::from(Span::from(format!("Blackout - v{version}")));
@@ -113,41 +232,4 @@ pub fn get_title_text(app: &App) -> Line<'static> {
     }
 
     title_text
-}
-
-pub fn render_password_generator(
-    f: &mut Frame,
-    area: Rect,
-    state: &PasswordGeneratorState,
-    app: &App,
-) {
-    let vertical =
-        Layout::vertical([Constraint::Percentage(30), Constraint::Percentage(70)]).split(area);
-    let password_area = vertical[0];
-    let form_area = vertical[1];
-
-    let password_text = match &state.generated_password {
-        Some(p) => format!(" {} ", p),
-        None => " Press 'r' to generate ".to_string(),
-    };
-
-    let generator_block = Block::default().title("Pass Generator");
-    let password_paragraph = Paragraph::new(password_text)
-        .block(generator_block)
-        .centered();
-
-    f.render_widget(password_paragraph, password_area);
-
-    let fields = vec![
-        FieldConfig::text("Length"),
-        FieldConfig::text("Mode"),
-        FieldConfig::text("Word Count"),
-        FieldConfig::text("Separator"),
-        FieldConfig::text("Capitalize"),
-        FieldConfig::text("Uppercase"),
-        FieldConfig::text("Lowercase"),
-        FieldConfig::text("Numbers"),
-        FieldConfig::text("Symbols"),
-    ];
-    render_form(f, form_area, "Pass Generator", &fields, app);
 }
