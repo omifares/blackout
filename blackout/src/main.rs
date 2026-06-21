@@ -58,7 +58,6 @@ fn run(mut terminal: DefaultTerminal, app: &mut app::App) -> Result<()> {
                     && matches!(
                         app.state,
                         app::AppState::InitialCheck
-                            | app::AppState::UnlockPrompt(_)
                             | app::AppState::EntriesList
                             | app::AppState::VaultLocked
                     )

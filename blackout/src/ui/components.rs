@@ -10,7 +10,7 @@ pub fn get_helper_text(state: &AppState) -> Line<'static> {
     let text = match state {
         AppState::InitialCheck | AppState::SnapshotList => "(Esc) Quit",
         AppState::UnlockPrompt(_) => "(↵) Submit | (Esc) Quit",
-        AppState::VaultLocked => "(Esc) Quit | (any) Unlock vault",
+        AppState::VaultLocked => "(Esc) Quit | (F3) Gen Pass | (any) Unlock vault",
         AppState::EntriesList => {
             "(Esc) Quit | (e) Edit | (↵) Select | (⌫) Delete | (n) New | (x) Lock | (?) Options "
         }
@@ -24,6 +24,7 @@ pub fn get_helper_text(state: &AppState) -> Line<'static> {
         }
         AppState::ConfirmAction { .. } => "(Esc) Cancel | (↵) Confirm",
         AppState::Settings(_) => "(Esc) Back | (↑ and ↓) Navigate | (↵) Select",
+        AppState::PasswordGenerator(_) => "(Esc) Back | (↵) Copy | (r) Regen | (Esc) Quit",
     };
     Line::from(text).dim()
 }
@@ -112,4 +113,41 @@ pub fn get_title_text(app: &App) -> Line<'static> {
     }
 
     title_text
+}
+
+pub fn render_password_generator(
+    f: &mut Frame,
+    area: Rect,
+    state: &PasswordGeneratorState,
+    app: &App,
+) {
+    let vertical =
+        Layout::vertical([Constraint::Percentage(30), Constraint::Percentage(70)]).split(area);
+    let password_area = vertical[0];
+    let form_area = vertical[1];
+
+    let password_text = match &state.generated_password {
+        Some(p) => format!(" {} ", p),
+        None => " Press 'r' to generate ".to_string(),
+    };
+
+    let generator_block = Block::default().title("Pass Generator");
+    let password_paragraph = Paragraph::new(password_text)
+        .block(generator_block)
+        .centered();
+
+    f.render_widget(password_paragraph, password_area);
+
+    let fields = vec![
+        FieldConfig::text("Length"),
+        FieldConfig::text("Mode"),
+        FieldConfig::text("Word Count"),
+        FieldConfig::text("Separator"),
+        FieldConfig::text("Capitalize"),
+        FieldConfig::text("Uppercase"),
+        FieldConfig::text("Lowercase"),
+        FieldConfig::text("Numbers"),
+        FieldConfig::text("Symbols"),
+    ];
+    render_form(f, form_area, "Pass Generator", &fields, app);
 }

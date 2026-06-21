@@ -1,4 +1,4 @@
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FormState {
     pub fields: Vec<String>,
     pub current_field: usize,

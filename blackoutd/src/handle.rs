@@ -30,8 +30,11 @@ impl Context {
 
 // Auth check
 fn needs_auth(req: &Request) -> bool {
-    // Except Ping and Unlock
-    !matches!(req, Request::Ping | Request::Unlock { .. } | Request::Lock)
+    // Except Ping, Unlock and Password Generation
+    !matches!(
+        req,
+        Request::Ping | Request::Unlock { .. } | Request::Lock | Request::PasswordGen { .. }
+    )
 }
 
 // vault mutation
@@ -75,20 +78,18 @@ pub async fn process_request(
 
         // PRE-FLIGHT
         if let Request::RestoreSnapshot { version, uuid } = &req
-            && let Some(vault) = &st.vault {
-                let can_restore = vault
-                    .history
-                    .iter()
-                    .any(|s| s.uuid == *uuid && s.file_ref.is_some());
+            && let Some(vault) = &st.vault
+        {
+            let can_restore = vault
+                .history
+                .iter()
+                .any(|s| s.uuid == *uuid && s.file_ref.is_some());
 
-                if !can_restore {
-                    error!("Can't load snapshot file for uuid {}", uuid);
-                    return Response::Error(format!(
-                        "Fail to load snapshot v{} from disk",
-                        version
-                    ));
-                }
+            if !can_restore {
+                error!("Can't load snapshot file for uuid {}", uuid);
+                return Response::Error(format!("Fail to load snapshot v{} from disk", version));
             }
+        }
 
         // Create snapshot
         let reason = match &req {
@@ -150,6 +151,7 @@ pub async fn process_request(
         Request::RestoreSnapshot { version, uuid } => {
             handle_restore_snapshot(ctx, uuid, version).await
         }
+        Request::PasswordGen { pass_type } => handle_password_gen(&pass_type).await,
     }
 }
 
@@ -407,9 +409,31 @@ async fn handle_restore_snapshot(ctx: Context, uuid: Uuid, target_version: u32) 
 
         prune_excess_snapshots(vault);
 
-        Response::Ok(format!("Snapshot restored successfully to 'v{}'", target_version))
+        Response::Ok(format!(
+            "Snapshot restored successfully to 'v{}'",
+            target_version
+        ))
     } else {
         Response::Error("Vault is not loaded.".into())
+    }
+}
+
+async fn handle_password_gen(pass_type: &str) -> Response {
+    let config = DaemonConfig::load_config();
+
+    let pass_result = match pass_type {
+        "passphrase" => blackout_core::generator::generate_passphrase(
+            config.password_generation.word_count,
+            &config.password_generation.separator.to_string(),
+            config.password_generation.capitalize,
+        ),
+        "password" => blackout_core::generator::generate_password(&config.password_generation),
+        _ => return Response::Error(format!("Invalid password generation type: {}", pass_type)),
+    };
+
+    match pass_result {
+        Ok(generated_password) => Response::Ok(generated_password),
+        Err(e) => Response::Error(format!("Failed to generate password: {}", e)),
     }
 }
 
@@ -430,20 +454,19 @@ fn prune_excess_snapshots(vault: &mut Vault) {
         .filter(|s| s.file_ref.is_some())
         .collect();
 
-    let over_snaps = snapshots
-        .len()
-        .saturating_sub(config.max_snapshots);
+    let over_snaps = snapshots.len().saturating_sub(config.max_snapshots);
 
     if over_snaps > 0 {
         for snap in snapshots.into_iter().take(over_snaps) {
             if let Some(path) = &snap.file_ref
-                && let Err(e) = std::fs::remove_file(path) {
-                    warn!(
-                        "Fail to remove snapshot file '{}': {}",
-                        path.display().to_string(),
-                        e
-                    );
-                }
+                && let Err(e) = std::fs::remove_file(path)
+            {
+                warn!(
+                    "Fail to remove snapshot file '{}': {}",
+                    path.display().to_string(),
+                    e
+                );
+            }
             snap.file_ref = None;
         }
     }

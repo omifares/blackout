@@ -4,7 +4,9 @@ use blackout_core::ipc::{
 
 use blackout_core::vault::{Entry, VaultSnapshot};
 
-use crate::state::{FieldConfig, FormState, PendingAction, SelectedItem, SettingsState};
+use crate::state::{
+    FieldConfig, FormState, PasswordGeneratorState, PendingAction, SelectedItem, SettingsState,
+};
 
 use ratatui::widgets::TableState;
 
@@ -29,6 +31,7 @@ pub enum AppState {
         action: PendingAction,
         previous_state: Box<AppState>,
     },
+    PasswordGenerator(PasswordGeneratorState),
 }
 
 pub struct App {
@@ -482,4 +485,14 @@ impl App {
             }
         }
     }
+    pub fn generate_password(&mut self) {
+        if let AppState::PasswordGenerator(state) = &mut self.state {
+            let result = state.generate_password();
+            match result {
+                Ok(msg) => self.set_status(msg.into()),
+                Err(msg) => self.set_status(msg.into()),
+            }
+        }
+    }
+
 }

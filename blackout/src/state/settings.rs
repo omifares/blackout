@@ -1,4 +1,9 @@
+use crate::{state::FormState};
 use ratatui::widgets::ListState;
+use blackout_core::generator::{
+    GeneratorConfig, GeneratorMode, generate_passphrase, generate_password,
+};
+
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SettingsOption {
@@ -83,6 +88,36 @@ impl PendingAction {
                 "Warning: Restore snapshot v{}. This action will overwrite the current state. Continue?",
                 version
             ),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PasswordGeneratorState {
+    pub config: GeneratorConfig,
+    pub generated_password: Option<String>,
+    pub form_state: FormState,
+}
+
+impl PasswordGeneratorState {
+    pub fn generate_password(&mut self) -> Result<String, String> {
+        let result = match self.config.mode {
+            GeneratorMode::RandomChars => generate_password(&self.config),
+            GeneratorMode::Passphrase => generate_passphrase(
+                self.config.word_count,
+                &self.config.separator.to_string(),
+                self.config.capitalize,
+            ),
+        };
+        match result {
+            Ok(pwd) => {
+                self.generated_password = Some(pwd);
+                Ok("Password generated!".into())
+            }
+            Err(e) => {
+                self.generated_password = None;
+                Err(format!("Generation failed: {}", e))
+            }
         }
     }
 }

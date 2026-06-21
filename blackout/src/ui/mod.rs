@@ -46,6 +46,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         AppState::ChangeMasterPassword(fields) => {
             components::render_form(frame, area, "Change Master Password", fields, app)
         }
+        AppState::PasswordGenerator(state) => {
+            components::render_password_generator(frame, area, &state, app)
+        }
     }
 
     // Status & Footer

@@ -2,10 +2,14 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+use crate::generator::GeneratorConfig;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct DaemonConfig {
     pub auto_lock_timeout: u64,
     pub max_snapshots: usize,
+    pub password_generation: GeneratorConfig,
 }
 
 impl Default for DaemonConfig {
@@ -13,6 +17,7 @@ impl Default for DaemonConfig {
         Self {
             auto_lock_timeout: 30,
             max_snapshots: 0, // 0 = unlimited
+            password_generation: GeneratorConfig::default(),
         }
     }
 }

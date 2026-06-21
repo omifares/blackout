@@ -44,6 +44,7 @@ pub enum Request {
     UpdateMasterPassword { new_password: String },
     ListSnapshots,
     RestoreSnapshot { version: u32, uuid: uuid::Uuid },
+    PasswordGen { pass_type: String },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
