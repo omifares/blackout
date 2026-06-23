@@ -164,68 +164,6 @@ impl FieldConfig {
             ..Default::default()
         }
     }
-
-    pub fn from_config(config: &GeneratorConfig) -> Vec<Self> {
-        vec![
-            FieldConfig {
-                label: "Length",
-                field_type: FieldType::Number,
-                value: FieldValue::Number(config.length as u16),
-                ..Default::default()
-            },
-            FieldConfig {
-                label: "Mode",
-                field_type: FieldType::Choice(EnumChoice::GeneratorMode),
-                value: FieldValue::Choice(match config.mode {
-                    GeneratorMode::RandomChars => 0,
-                    GeneratorMode::Passphrase => 1,
-                }),
-                ..Default::default()
-            },
-            FieldConfig {
-                label: "Capitalize",
-                field_type: FieldType::Checkbox,
-                value: FieldValue::Boolean(config.capitalize),
-                ..Default::default()
-            },
-            FieldConfig {
-                label: "Word Count",
-                field_type: FieldType::Number,
-                value: FieldValue::Number(config.word_count as u16),
-                ..Default::default()
-            },
-            FieldConfig {
-                label: "Separator",
-                field_type: FieldType::Text,
-                value: FieldValue::Text(config.separator.to_string()),
-                ..Default::default()
-            },
-            FieldConfig {
-                label: "Uppercase",
-                field_type: FieldType::Checkbox,
-                value: FieldValue::Boolean(config.uppercase),
-                ..Default::default()
-            },
-            FieldConfig {
-                label: "Lowercase",
-                field_type: FieldType::Checkbox,
-                value: FieldValue::Boolean(config.lowercase),
-                ..Default::default()
-            },
-            FieldConfig {
-                label: "Numbers",
-                field_type: FieldType::Checkbox,
-                value: FieldValue::Boolean(config.numbers),
-                ..Default::default()
-            },
-            FieldConfig {
-                label: "Symbols",
-                field_type: FieldType::Checkbox,
-                value: FieldValue::Boolean(config.symbols),
-                ..Default::default()
-            },
-        ]
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -304,8 +242,7 @@ impl PasswordGeneratorState {
     }
 
     pub fn generate_password(&mut self) -> Result<String, String> {
-        let mode = self.session_config.mode.clone();
-        let pwd = blackout_core::generator::generate(mode, &self.session_config)?;
+        let pwd = blackout_core::generator::generate(self.session_config.clone())?;
 
         self.generated_password = Some(pwd.clone());
         Ok(pwd)

@@ -49,6 +49,7 @@ pub struct App {
     pub form_state: FormState,
     pub snapshots: Vec<VaultSnapshot>,
     pub dev_mode: bool,
+    pub generator_session_config: Option<GeneratorConfig>,
 }
 
 impl App {
@@ -72,6 +73,7 @@ impl App {
             form_state: FormState::new(),
             snapshots: vec![],
             dev_mode: dev_mode,
+            generator_session_config: None,
         }
     }
 
@@ -562,6 +564,26 @@ impl App {
             Err(e) => {
                 self.set_status(format!("Failed to load generator config: {}", e));
                 GeneratorConfig::default()
+            }
+        }
+    }
+
+    pub fn auto_fill_password(&mut self) {
+        let config = self.load_generator_config();
+        if let AppState::NewEntryForm | AppState::UpdateEntry = self.state {
+            let password_field = self
+                .form_state
+                .fields
+                .iter_mut()
+                .find(|f| matches!(f.field_type, FieldType::Password));
+
+            if let Some(field) = password_field {
+                if let Ok(new_password) = blackout_core::generator::generate(config) {
+                    field.value = FieldValue::Text(new_password);
+                    self.set_status("Password auto-filled!".into());
+                }
+            } else {
+                self.set_status("No password field found in this form".into());
             }
         }
     }

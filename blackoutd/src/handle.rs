@@ -1,4 +1,3 @@
-use blackout_core::generator::GeneratorMode;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -424,14 +423,8 @@ async fn handle_password_gen(pass_type: &str) -> Response {
     let config = DaemonConfig::load_config();
 
     let pass_result = match pass_type {
-        "passphrase" => blackout_core::generator::generate(
-            GeneratorMode::Passphrase,
-            &config.password_generation,
-        ),
-        "password" => blackout_core::generator::generate(
-            GeneratorMode::RandomChars,
-            &config.password_generation,
-        ),
+        "passphrase" => blackout_core::generator::generate(config.password_generation.clone()),
+        "password" => blackout_core::generator::generate(config.password_generation.clone()),
         _ => return Response::Error(format!("Invalid password generation type: {}", pass_type)),
     };
 
