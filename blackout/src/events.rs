@@ -1,10 +1,11 @@
 use std::time::Instant;
 
 use crate::app::{App, AppState};
-use crate::state::FormState;
 use crate::state::PasswordGeneratorState;
-use crate::state::settings::{FieldConfig, PendingAction, SettingsOption, SettingsState};
-use blackout_core::generator::{GeneratorConfig, GeneratorMode};
+use crate::state::settings::{
+    FieldConfig, FieldType, FieldValue, PendingAction, SettingsOption, SettingsState,
+};
+use blackout_core::generator::GeneratorConfig;
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub fn handle_event(app: &mut App, key: KeyEvent) {
@@ -15,45 +16,70 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 // Quit handled in main
             }
         }
-        AppState::UnlockPrompt(ref mut field) => match key.code {
+        AppState::UnlockPrompt => match key.code {
             KeyCode::Esc => app.state = AppState::VaultLocked,
             KeyCode::Backspace => {
-                if let Some(field_text) =
+                if let Some(field_config) =
                     app.form_state.fields.get_mut(app.form_state.current_field)
                 {
-                    let mut chars: Vec<char> = field_text.chars().collect();
-
-                    let cursor = app.form_state.cursor_index;
-                    if cursor > 0 && cursor <= chars.len() {
-                        chars.remove(cursor - 1);
-                        *field_text = chars.into_iter().collect();
-                        app.form_state.cursor_index -= 1;
+                    match field_config.value {
+                        FieldValue::Text(ref mut field_text) => {
+                            let cursor = app.form_state.cursor_index;
+                            if cursor > 0 && cursor <= field_text.len() {
+                                field_text.remove(cursor - 1);
+                                app.form_state.cursor_index -= 1;
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
             KeyCode::Char(c) => {
-                if let Some(field_text) =
+                if let Some(field_config) =
                     app.form_state.fields.get_mut(app.form_state.current_field)
                 {
-                    let mut chars: Vec<char> = field_text.chars().collect();
+                    if matches!(field_config.field_type, FieldType::Number) && !c.is_numeric() {
+                        return;
+                    }
 
-                    let cursor = app.form_state.cursor_index;
-                    chars.insert(cursor.min(chars.len()), c);
-                    *field_text = chars.into_iter().collect();
+                    match &mut field_config.value {
+                        FieldValue::Text(field_text) => {
+                            let cursor = app.form_state.cursor_index;
 
-                    app.form_state.cursor_index += 1;
+                            // Converte a string para um array de caracteres seguros
+                            let mut chars: Vec<char> = field_text.chars().collect();
+
+                            // Garante que o cursor nunca é maior que o tamanho real da string
+                            let insert_pos = cursor.min(chars.len());
+
+                            // Insere o caractere
+                            chars.insert(insert_pos, c);
+
+                            // Reconstrói a string
+                            *field_text = chars.into_iter().collect();
+
+                            // Move o cursor uma posição para a frente
+                            app.form_state.cursor_index += 1;
+                        }
+                        _ => {}
+                    }
                 }
             }
             KeyCode::Delete => {
-                if let Some(field_text) =
+                if let Some(field_config) =
                     app.form_state.fields.get_mut(app.form_state.current_field)
                 {
-                    let mut chars: Vec<char> = field_text.chars().collect();
-                    let cursor = app.form_state.cursor_index;
+                    match field_config.value {
+                        FieldValue::Text(ref mut field_text) => {
+                            let mut chars: Vec<char> = field_text.chars().collect();
+                            let cursor = app.form_state.cursor_index;
 
-                    if cursor < chars.len() {
-                        chars.remove(cursor);
-                        *field_text = chars.into_iter().collect();
+                            if cursor < chars.len() {
+                                chars.remove(cursor);
+                                *field_text = chars.into_iter().collect();
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -63,20 +89,29 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 }
             }
             KeyCode::Right => {
-                if let Some(field_text) =
+                if let Some(field_config) =
                     app.form_state.fields.get_mut(app.form_state.current_field)
                 {
-                    if app.form_state.cursor_index < field_text.len() {
-                        app.form_state.cursor_index += 1;
+                    match field_config.value {
+                        FieldValue::Text(ref field_text) => {
+                            if app.form_state.cursor_index < field_text.len() {
+                                app.form_state.cursor_index += 1;
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
             KeyCode::F(2) => {
-                field.show_password = !field.show_password;
+                app.form_state.obscure_inputs = !app.form_state.obscure_inputs;
             }
             KeyCode::Enter => {
-                app.unlock_vault(app.form_state.fields[0].clone());
-                app.form_state.clear();
+                let current_field = app.form_state.current_field;
+                let password = match app.form_state.fields[current_field].value {
+                    FieldValue::Text(ref field_text) => field_text.clone(),
+                    _ => return,
+                };
+                app.unlock_vault(&password);
             }
 
             _ => {}
@@ -88,55 +123,21 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 }
                 KeyCode::F(3) => {
                     let config = GeneratorConfig::default();
-                    let form_state = FormState {
-                        fields: vec![
-                            config.length.to_string(),
-                            match config.mode {
-                                GeneratorMode::RandomChars => "RandomChars",
-                                GeneratorMode::Passphrase => "Passphrase",
-                            }
-                            .to_string(),
-                            config.word_count.to_string(),
-                            config.separator.to_string(),
-                            if config.capitalize {
-                                "[x]".to_string()
-                            } else {
-                                "[ ]".to_string()
-                            },
-                            if config.uppercase {
-                                "[x]".to_string()
-                            } else {
-                                "[ ]".to_string()
-                            },
-                            if config.lowercase {
-                                "[x]".to_string()
-                            } else {
-                                "[ ]".to_string()
-                            },
-                            if config.numbers {
-                                "[x]".to_string()
-                            } else {
-                                "[ ]".to_string()
-                            },
-                            if config.symbols {
-                                "[x]".to_string()
-                            } else {
-                                "[ ]".to_string()
-                            },
-                        ],
-                        current_field: 0,
-                        cursor_index: 0,
-                        obscure_inputs: false,
-                    };
+
+                    let fields = FieldConfig::from_config(&config);
+
+                    app.form_state.clear();
+                    app.form_state.fields = fields;
+
                     app.state = AppState::PasswordGenerator(PasswordGeneratorState {
-                        config,
+                        session_config: config,
                         generated_password: None,
-                        form_state,
-                    })
+                    });
                 }
                 _ => {
                     app.form_state.clear();
-                    app.state = AppState::UnlockPrompt(FieldConfig::password("Password"))
+                    app.form_state.fields = vec![FieldConfig::password("Master Password")];
+                    app.state = AppState::UnlockPrompt;
                 }
             }
         }
@@ -150,20 +151,24 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 }
                 KeyCode::Char('n') => {
                     let fields = vec![
-                        FieldConfig::text("Service"),
-                        FieldConfig::text("Username"),
+                        FieldConfig::service("Service"),
+                        FieldConfig::username("Username"),
                         FieldConfig::password("Password"),
                     ];
-                    app.open_form(AppState::NewEntryForm(fields), None);
+                    app.form_state.clear();
+                    app.form_state.fields = fields;
+                    app.open_form(AppState::NewEntryForm, None);
                 }
                 KeyCode::Char('e') => {
                     let fields = vec![
-                        FieldConfig::text("Edit Service"),
-                        FieldConfig::text("Edit Username"),
+                        FieldConfig::service("Edit Service"),
+                        FieldConfig::username("Edit Username"),
                         FieldConfig::password("Edit Password"),
                     ];
+                    app.form_state.clear();
+                    app.form_state.fields = fields;
                     let uuid = app.get_selected_entry_id();
-                    app.open_form(AppState::UpdateEntry(fields), uuid);
+                    app.open_form(AppState::UpdateEntry, uuid);
                 }
                 KeyCode::Char('?') => {
                     app.state = AppState::Settings(SettingsState::default());
@@ -185,48 +190,57 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                 }
                 KeyCode::Enter => {
                     let fields = vec![
-                        FieldConfig::text("Service"),
-                        FieldConfig::text("Username"),
+                        FieldConfig::text("Service", ""),
+                        FieldConfig::text("Username", ""),
                         FieldConfig::password("Password"),
                     ];
+                    app.form_state.clear();
+                    app.form_state.fields = fields;
                     let uuid = app.get_selected_entry_id();
-                    app.open_form(AppState::ViewEntry(fields, uuid.unwrap_or_default()), uuid);
+                    app.open_form(AppState::ViewEntry(uuid.unwrap_or_default()), uuid);
                 }
                 _ => {}
             }
         }
-        AppState::ViewEntry(ref mut fields, uuid) => match key.code {
+        AppState::ViewEntry(ref uuid) => match key.code {
             KeyCode::Backspace => {
                 app.state = AppState::ConfirmAction {
-                    action: PendingAction::DeleteEntry(uuid),
+                    action: PendingAction::DeleteEntry(*uuid),
                     previous_state: Box::new(AppState::EntriesList),
                 };
             }
             KeyCode::Enter => {
-                let content = app.form_state.fields[app.form_state.current_field].clone();
+                let content = match app.form_state.fields[app.form_state.current_field].value {
+                    FieldValue::Text(ref field_text) => field_text.clone(),
+                    _ => return,
+                };
                 app.copy_to_clipboard(content);
             }
             KeyCode::Char('e') => {
                 let fields = vec![
-                    FieldConfig::text("Edit Service"),
-                    FieldConfig::text("Edit Username"),
+                    FieldConfig::service("Edit Service"),
+                    FieldConfig::username("Edit Username"),
                     FieldConfig::password("Edit Password"),
                 ];
-                app.open_form(AppState::UpdateEntry(fields), Some(uuid));
+                app.form_state.clear();
+                app.form_state.fields = fields;
+                let uuid = app.get_selected_entry_id();
+                app.open_form(AppState::UpdateEntry, uuid);
             }
             KeyCode::Tab => {
-                app.form_state.current_field = (app.form_state.current_field + 1) % fields.len();
+                app.form_state.current_field =
+                    (app.form_state.current_field + 1) % app.form_state.fields.len();
             }
             KeyCode::BackTab => {
                 if app.form_state.current_field == 0 {
-                    app.form_state.current_field = fields.len() - 1;
+                    app.form_state.current_field = app.form_state.fields.len() - 1;
                 } else {
                     app.form_state.current_field -= 1;
                 }
             }
             KeyCode::F(2) => {
-                if let AppState::ViewEntry(fields, ..) = &mut app.state {
-                    for field in fields.iter_mut() {
+                if let AppState::ViewEntry(..) = &mut app.state {
+                    for field in app.form_state.fields.iter_mut() {
                         field.show_password = !field.show_password;
                     }
                 }
@@ -255,100 +269,122 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
             _ => {}
         },
 
-        AppState::NewEntryForm(ref mut fields)
-        | AppState::UpdateEntry(ref mut fields)
-        | AppState::ChangeMasterPassword(ref mut fields) => match key.code {
-            KeyCode::Tab => {
-                app.form_state.current_field = (app.form_state.current_field + 1) % fields.len();
-                app.form_state.cursor_index = 0;
-            }
-            KeyCode::BackTab => {
-                if app.form_state.current_field == 0 {
-                    app.form_state.current_field = fields.len() - 1;
-                } else {
-                    app.form_state.current_field -= 1;
+        AppState::NewEntryForm | AppState::UpdateEntry | AppState::ChangeMasterPassword => {
+            match key.code {
+                KeyCode::Tab => {
+                    app.form_state.current_field =
+                        (app.form_state.current_field + 1) % app.form_state.fields.len();
+                    app.form_state.cursor_index = 0;
                 }
-                app.form_state.cursor_index = 0;
-            }
-            KeyCode::Down => {
-                app.form_state.current_field = (app.form_state.current_field + 1) % fields.len();
-                app.form_state.cursor_index = 0;
-            }
-            KeyCode::Up => {
-                if app.form_state.current_field == 0 {
-                    app.form_state.current_field = fields.len() - 1;
-                } else {
-                    app.form_state.current_field -= 1;
-                }
-                app.form_state.cursor_index = 0;
-            }
-            KeyCode::Left => {
-                if app.form_state.cursor_index > 0 {
-                    app.form_state.cursor_index -= 1;
-                }
-            }
-            KeyCode::Right => {
-                if let Some(field_text) =
-                    app.form_state.fields.get_mut(app.form_state.current_field)
-                {
-                    if app.form_state.cursor_index < field_text.len() {
-                        app.form_state.cursor_index += 1;
+                KeyCode::BackTab => {
+                    if app.form_state.current_field == 0 {
+                        app.form_state.current_field = app.form_state.fields.len() - 1;
+                    } else {
+                        app.form_state.current_field -= 1;
                     }
+                    app.form_state.cursor_index = 0;
                 }
-            }
-            KeyCode::Char(c) => {
-                if let Some(field_text) =
-                    app.form_state.fields.get_mut(app.form_state.current_field)
-                {
-                    let mut chars: Vec<char> = field_text.chars().collect();
-
-                    let cursor = app.form_state.cursor_index;
-                    chars.insert(cursor.min(chars.len()), c);
-                    *field_text = chars.into_iter().collect();
-
-                    app.form_state.cursor_index += 1;
+                KeyCode::Down => {
+                    app.form_state.current_field =
+                        (app.form_state.current_field + 1) % app.form_state.fields.len();
+                    app.form_state.cursor_index = 0;
                 }
-            }
-            KeyCode::Backspace => {
-                if let Some(field_text) =
-                    app.form_state.fields.get_mut(app.form_state.current_field)
-                {
-                    let mut chars: Vec<char> = field_text.chars().collect();
-                    let cursor = app.form_state.cursor_index;
-
-                    if cursor > 0 && cursor <= chars.len() {
-                        chars.remove(cursor - 1);
-                        *field_text = chars.into_iter().collect();
+                KeyCode::Up => {
+                    if app.form_state.current_field == 0 {
+                        app.form_state.current_field = app.form_state.fields.len() - 1;
+                    } else {
+                        app.form_state.current_field -= 1;
+                    }
+                    app.form_state.cursor_index = 0;
+                }
+                KeyCode::Left => {
+                    if app.form_state.cursor_index > 0 {
                         app.form_state.cursor_index -= 1;
                     }
                 }
-            }
-            KeyCode::Delete => {
-                if let Some(field_text) =
-                    app.form_state.fields.get_mut(app.form_state.current_field)
-                {
-                    let mut chars: Vec<char> = field_text.chars().collect();
-                    let cursor = app.form_state.cursor_index;
-
-                    if cursor < chars.len() {
-                        chars.remove(cursor);
-                        *field_text = chars.into_iter().collect();
+                KeyCode::Right => {
+                    if let Some(field_config) =
+                        app.form_state.fields.get_mut(app.form_state.current_field)
+                    {
+                        match field_config.value {
+                            FieldValue::Text(ref field_text) => {
+                                if app.form_state.cursor_index < field_text.len() {
+                                    app.form_state.cursor_index += 1;
+                                }
+                            }
+                            _ => {}
+                        }
                     }
                 }
+                KeyCode::Char(c) => {
+                    if let Some(field_config) =
+                        app.form_state.fields.get_mut(app.form_state.current_field)
+                    {
+                        match field_config.value {
+                            FieldValue::Text(ref mut field_text) => {
+                                let mut chars: Vec<char> = field_text.chars().collect();
+
+                                let cursor = app.form_state.cursor_index;
+                                chars.insert(cursor.min(chars.len()), c);
+                                *field_text = chars.into_iter().collect();
+
+                                app.form_state.cursor_index += 1;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                KeyCode::Backspace => {
+                    if let Some(field_config) =
+                        app.form_state.fields.get_mut(app.form_state.current_field)
+                    {
+                        match field_config.value {
+                            FieldValue::Text(ref mut field_text) => {
+                                let mut chars: Vec<char> = field_text.chars().collect();
+                                let cursor = app.form_state.cursor_index;
+
+                                if cursor > 0 && cursor <= chars.len() {
+                                    chars.remove(cursor - 1);
+                                    *field_text = chars.into_iter().collect();
+                                    app.form_state.cursor_index -= 1;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                KeyCode::Delete => {
+                    if let Some(field_config) =
+                        app.form_state.fields.get_mut(app.form_state.current_field)
+                    {
+                        match field_config.value {
+                            FieldValue::Text(ref mut field_text) => {
+                                let mut chars: Vec<char> = field_text.chars().collect();
+                                let cursor = app.form_state.cursor_index;
+
+                                if cursor < chars.len() {
+                                    chars.remove(cursor);
+                                    *field_text = chars.into_iter().collect();
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                KeyCode::F(2) => {
+                    app.form_state.fields[app.form_state.current_field].show_password =
+                        !app.form_state.fields[app.form_state.current_field].show_password;
+                }
+                KeyCode::Enter => {
+                    app.submit_form();
+                }
+                KeyCode::Esc => {
+                    app.form_state.clear();
+                    app.state = AppState::EntriesList;
+                }
+                _ => {}
             }
-            KeyCode::F(2) => {
-                fields[app.form_state.current_field].show_password =
-                    !fields[app.form_state.current_field].show_password;
-            }
-            KeyCode::Enter => {
-                app.submit_form();
-            }
-            KeyCode::Esc => {
-                app.form_state.clear();
-                app.state = AppState::EntriesList;
-            }
-            _ => {}
-        },
+        }
 
         AppState::Settings(ref mut settings) => match key.code {
             KeyCode::Esc => {
@@ -369,59 +405,24 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                                 FieldConfig::password("New Password"),
                                 FieldConfig::password("Conform Password"),
                             ];
-                            app.open_form(AppState::ChangeMasterPassword(fields), None);
+                            app.form_state.fields = fields;
+                            app.open_form(AppState::ChangeMasterPassword, None);
                         }
                         SettingsOption::SnapshotList => {
                             app.load_snapshots();
                             app.state = AppState::SnapshotList
                         }
                         SettingsOption::PasswordGenerator => {
-                            let config = GeneratorConfig::default();
-                            let form_state = FormState {
-                                fields: vec![
-                                    config.length.to_string(),
-                                    match config.mode {
-                                        GeneratorMode::RandomChars => "RandomChars",
-                                        GeneratorMode::Passphrase => "Passphrase",
-                                    }
-                                    .to_string(),
-                                    config.word_count.to_string(),
-                                    config.separator.to_string(),
-                                    if config.capitalize {
-                                        "[x]".to_string()
-                                    } else {
-                                        "[ ]".to_string()
-                                    },
-                                    if config.uppercase {
-                                        "[x]".to_string()
-                                    } else {
-                                        "[ ]".to_string()
-                                    },
-                                    if config.lowercase {
-                                        "[x]".to_string()
-                                    } else {
-                                        "[ ]".to_string()
-                                    },
-                                    if config.numbers {
-                                        "[x]".to_string()
-                                    } else {
-                                        "[ ]".to_string()
-                                    },
-                                    if config.symbols {
-                                        "[x]".to_string()
-                                    } else {
-                                        "[ ]".to_string()
-                                    },
-                                ],
-                                current_field: 0,
-                                cursor_index: 0,
-                                obscure_inputs: false,
-                            };
-                            app.state = AppState::PasswordGenerator(PasswordGeneratorState {
-                                config,
+                            let gen_state = PasswordGeneratorState {
+                                session_config: app.load_generator_config(),
                                 generated_password: None,
-                                form_state,
-                            });
+                            };
+
+                            app.form_state.clear();
+                            app.form_state.fields = gen_state.build_form_fields();
+
+                            // Muda a tela
+                            app.state = AppState::PasswordGenerator(gen_state);
                         }
                     }
                 }
@@ -452,222 +453,176 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
             _ => {}
         },
 
-        AppState::PasswordGenerator(_) => {
-            match key.code {
-                KeyCode::Esc => {
-                    if let AppState::PasswordGenerator(_state) = &mut app.state {
-                        app.state = AppState::VaultLocked;
-                    }
+        AppState::PasswordGenerator(_) => match key.code {
+            KeyCode::Esc => {
+                if let AppState::PasswordGenerator(_state) = &mut app.state {
+                    app.state = AppState::VaultLocked;
                 }
-                KeyCode::Enter => {
-                    if let AppState::PasswordGenerator(state) = &mut app.state {
-                        if let Some(pwd) = state.generated_password.clone() {
-                            app.copy_to_clipboard(pwd);
-                        }
-                    }
-                }
-                KeyCode::Char('r') => {
-                    if let AppState::PasswordGenerator(state) = &mut app.state {
-                        // parse config from form_state.fields
-                        let len = state.form_state.fields[0].parse::<usize>().unwrap_or(16);
-                        let mode = match state.form_state.fields[1].as_str() {
-                            "RandomChars" => GeneratorMode::RandomChars,
-                            "Passphrase" => GeneratorMode::Passphrase,
-                            _ => GeneratorMode::Passphrase,
-                        };
-                        let word_count = state.form_state.fields[2].parse::<usize>().unwrap_or(5);
-                        let separator = state.form_state.fields[3].chars().next().unwrap_or('_');
-                        let capitalize = state.form_state.fields[4].parse::<bool>().unwrap_or(true);
-                        let uppercase = state.form_state.fields[5].parse::<bool>().unwrap_or(true);
-                        let lowercase = state.form_state.fields[6].parse::<bool>().unwrap_or(true);
-                        let numbers = state.form_state.fields[7].parse::<bool>().unwrap_or(false);
-                        let symbols = state.form_state.fields[8].parse::<bool>().unwrap_or(false);
-                        let config = GeneratorConfig {
-                            mode,
-                            length: len,
-                            word_count: word_count,
-                            separator: separator,
-                            capitalize: capitalize,
-                            uppercase: uppercase,
-                            lowercase: lowercase,
-                            numbers: numbers,
-                            symbols: symbols,
-                        };
-                        state.config = config;
-                    }
-                    app.generate_password();
-                }
-                KeyCode::Tab => {
-                    if let AppState::PasswordGenerator(state) = &mut app.state {
-                        state.form_state.current_field =
-                            (state.form_state.current_field + 1) % state.form_state.fields.len();
-                        state.form_state.cursor_index = 0;
-                    }
-                }
-                KeyCode::BackTab => {
-                    if let AppState::PasswordGenerator(state) = &mut app.state {
-                        if state.form_state.current_field == 0 {
-                            state.form_state.current_field = state.form_state.fields.len() - 1;
-                        } else {
-                            state.form_state.current_field -= 1;
-                        }
-                        state.form_state.cursor_index = 0;
-                    }
-                }
-                KeyCode::Left => {
-                    if let AppState::PasswordGenerator(state) = &mut app.state {
-                        match state.form_state.current_field {
-                            1 => {
-                                // mode field
-                                state.config.mode = match state.config.mode {
-                                    GeneratorMode::RandomChars => GeneratorMode::Passphrase,
-                                    GeneratorMode::Passphrase => GeneratorMode::RandomChars,
-                                };
-                                state.form_state.fields[1] = match state.config.mode {
-                                    GeneratorMode::RandomChars => "RandomChars",
-                                    GeneratorMode::Passphrase => "Passphrase",
-                                }
-                                .to_string();
-                            }
-                            4..=8 => {
-                                // boolean fields
-                                let idx = state.form_state.current_field;
-                                let current = state.form_state.fields[idx].as_str();
-                                let new_bool = if current == "[x]" { false } else { true };
-                                state.form_state.fields[idx] = if new_bool {
-                                    "[x]".to_string()
-                                } else {
-                                    "[ ]".to_string()
-                                };
-                            }
-                            _ => {
-                                // Move cursor left
-                                if state.form_state.cursor_index > 0 {
-                                    state.form_state.cursor_index -= 1;
-                                }
-                            }
-                        }
-                    }
-                }
-                KeyCode::Right => {
-                    if let AppState::PasswordGenerator(state) = &mut app.state {
-                        match state.form_state.current_field {
-                            1 => {
-                                // mode field
-                                state.config.mode = match state.config.mode {
-                                    GeneratorMode::RandomChars => GeneratorMode::Passphrase,
-                                    GeneratorMode::Passphrase => GeneratorMode::RandomChars,
-                                };
-                                state.form_state.fields[1] = match state.config.mode {
-                                    GeneratorMode::RandomChars => "RandomChars",
-                                    GeneratorMode::Passphrase => "Passphrase",
-                                }
-                                .to_string();
-                            }
-                            4..=8 => {
-                                // boolean fields
-                                let idx = state.form_state.current_field;
-                                let current = state.form_state.fields[idx].as_str();
-                                let new_bool = if current == "[x]" { false } else { true };
-                                state.form_state.fields[idx] = if new_bool {
-                                    "[x]".to_string()
-                                } else {
-                                    "[ ]".to_string()
-                                };
-                            }
-                            _ => {
-                                if let Some(field_text) = state
-                                    .form_state
-                                    .fields
-                                    .get_mut(state.form_state.current_field)
-                                {
-                                    if state.form_state.cursor_index < field_text.len() {
-                                        state.form_state.cursor_index += 1;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                KeyCode::Char(c) => {
-                    if let AppState::PasswordGenerator(state) = &mut app.state {
-                        if state.form_state.current_field == 1 {
-                            // Ignore input for mode field
-                        } else if (4..=8).contains(&state.form_state.current_field) {
-                            if c == ' ' {
-                                // Toggle checkbox
-                                let idx = state.form_state.current_field;
-                                let current = state.form_state.fields[idx].as_str();
-                                let new_bool = if current == "[x]" { false } else { true };
-                                state.form_state.fields[idx] = if new_bool {
-                                    "[x]".to_string()
-                                } else {
-                                    "[ ]".to_string()
-                                };
-                            }
-                            // Ignore other input
-                        } else {
-                            if let Some(field_text) = state
-                                .form_state
-                                .fields
-                                .get_mut(state.form_state.current_field)
-                            {
-                                let mut chars: Vec<char> = field_text.chars().collect();
-                                let cursor = state.form_state.cursor_index;
-                                chars.insert(cursor.min(chars.len()), c);
-                                *field_text = chars.into_iter().collect();
-                                state.form_state.cursor_index += 1;
-                            }
-                        }
-                    }
-                }
-                KeyCode::Backspace => {
-                    if let AppState::PasswordGenerator(state) = &mut app.state {
-                        if state.form_state.current_field == 1
-                            || (4..=8).contains(&state.form_state.current_field)
-                        {
-                            // Ignore backspace for mode and boolean fields
-                        } else {
-                            if let Some(field_text) = state
-                                .form_state
-                                .fields
-                                .get_mut(state.form_state.current_field)
-                            {
-                                let mut chars: Vec<char> = field_text.chars().collect();
-                                let cursor = state.form_state.cursor_index;
-                                if cursor > 0 && cursor <= chars.len() {
-                                    chars.remove(cursor - 1);
-                                    *field_text = chars.into_iter().collect();
-                                    state.form_state.cursor_index -= 1;
-                                }
-                            }
-                        }
-                    }
-                }
-                KeyCode::Delete => {
-                    if let AppState::PasswordGenerator(state) = &mut app.state {
-                        if state.form_state.current_field == 1
-                            || (4..=8).contains(&state.form_state.current_field)
-                        {
-                            // Ignore delete for mode and boolean fields
-                        } else {
-                            if let Some(field_text) = state
-                                .form_state
-                                .fields
-                                .get_mut(state.form_state.current_field)
-                            {
-                                let mut chars: Vec<char> = field_text.chars().collect();
-                                let cursor = state.form_state.cursor_index;
-                                if cursor < chars.len() {
-                                    chars.remove(cursor);
-                                    *field_text = chars.into_iter().collect();
-                                }
-                            }
-                        }
-                    }
-                }
-                _ => {}
             }
-        }
+            KeyCode::Enter => {
+                if let AppState::PasswordGenerator(state) = &mut app.state {
+                    if let Some(pwd) = state.generated_password.clone() {
+                        app.copy_to_clipboard(pwd.to_string());
+                    }
+                }
+            }
+            KeyCode::Char('r') => {
+                if let AppState::PasswordGenerator(ref mut state) = app.state {
+                    state.sync_config(&app.form_state.fields);
+                    state.generate_password();
+                }
+            }
+            KeyCode::Tab => {
+                if let AppState::PasswordGenerator(_) = &mut app.state {
+                    app.form_state.current_field =
+                        (app.form_state.current_field + 1) % app.form_state.fields.len();
+                    app.form_state.cursor_index = 0;
+                }
+            }
+            KeyCode::BackTab => {
+                if let AppState::PasswordGenerator(_) = &mut app.state {
+                    if app.form_state.current_field == 0 {
+                        app.form_state.current_field = app.form_state.fields.len() - 1;
+                    } else {
+                        app.form_state.current_field -= 1;
+                    }
+                    app.form_state.cursor_index = 0;
+                }
+            }
+            KeyCode::Right | KeyCode::Char(' ') => {
+                if let AppState::PasswordGenerator(_) = &mut app.state {
+                    if let Some(field_config) =
+                        app.form_state.fields.get_mut(app.form_state.current_field)
+                    {
+                        match field_config.value {
+                            FieldValue::Boolean(b) => {
+                                field_config.value = FieldValue::Boolean(!b);
+                            }
+                            FieldValue::Choice(ref mut idx) => {
+                                if let FieldType::Choice(enum_choice) = &field_config.field_type {
+                                    let max_options = enum_choice.options().len();
+
+                                    *idx = (*idx + 1) % max_options;
+                                }
+                            }
+                            FieldValue::Text(ref text) => {
+                                if app.form_state.cursor_index < text.len() {
+                                    app.form_state.cursor_index += 1;
+                                }
+                            }
+                            FieldValue::Number(ref mut num) => {
+                                if *num < 100 {
+                                    *num += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            KeyCode::Left => {
+                if let AppState::PasswordGenerator(_) = &mut app.state {
+                    if let Some(field_config) =
+                        app.form_state.fields.get_mut(app.form_state.current_field)
+                    {
+                        match field_config.value {
+                            FieldValue::Text(ref text) => {
+                                if text.len() > 0 && app.form_state.cursor_index > 0 {
+                                    app.form_state.cursor_index -= 1;
+                                }
+                            }
+                            FieldValue::Choice(ref mut idx) => {
+                                if let FieldType::Choice(enum_choice) = &field_config.field_type {
+                                    let max_options = enum_choice.options().len();
+
+                                    *idx = (*idx + max_options - 1) % max_options;
+                                }
+                            }
+                            FieldValue::Boolean(ref b) => {
+                                field_config.value = FieldValue::Boolean(!b);
+                            }
+                            FieldValue::Number(ref mut num) => {
+                                if *num > 0 {
+                                    *num -= 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            KeyCode::Down => {
+                app.form_state.current_field =
+                    (app.form_state.current_field + 1) % app.form_state.fields.len();
+                app.form_state.cursor_index = 0;
+            }
+            KeyCode::Up => {
+                if app.form_state.current_field == 0 {
+                    app.form_state.current_field = app.form_state.fields.len() - 1;
+                } else {
+                    app.form_state.current_field -= 1;
+                }
+                app.form_state.cursor_index = 0;
+            }
+            KeyCode::Char(c) => {
+                if let AppState::PasswordGenerator(_) = &mut app.state {
+                    if let Some(field_config) =
+                        app.form_state.fields.get_mut(app.form_state.current_field)
+                    {
+                        match field_config.value {
+                            FieldValue::Text(ref mut text) => {
+                                text.insert(app.form_state.cursor_index, c);
+                                app.form_state.cursor_index += 1;
+                            }
+                            FieldValue::Number(ref mut num) => {
+                                if !c.is_ascii_digit() {
+                                    return;
+                                }
+                                *num = (*num * 10 + c.to_digit(10).unwrap() as u16) as u16;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            KeyCode::Backspace => {
+                if let Some(field_config) =
+                    app.form_state.fields.get_mut(app.form_state.current_field)
+                {
+                    match field_config.value {
+                        FieldValue::Number(ref mut num) => {
+                            let mut num_str = num.to_string();
+                            if num_str.len() > 1 {
+                                num_str.remove(app.form_state.cursor_index - 1);
+                                *num = num_str.parse().unwrap();
+                            } else {
+                                *num = 0;
+                            }
+                        }
+                        FieldValue::Text(ref mut text) => {
+                            if app.form_state.cursor_index > 0 {
+                                text.remove(app.form_state.cursor_index - 1);
+                                app.form_state.cursor_index -= 1;
+                            }
+                        }
+
+                        _ => {}
+                    }
+                }
+            }
+            KeyCode::Delete => {
+                if let Some(field_config) =
+                    app.form_state.fields.get_mut(app.form_state.current_field)
+                {
+                    match field_config.value {
+                        FieldValue::Text(ref mut text) => {
+                            if app.form_state.cursor_index < text.len() {
+                                text.remove(app.form_state.cursor_index);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        },
     }
 }

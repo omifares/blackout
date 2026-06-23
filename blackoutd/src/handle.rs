@@ -1,3 +1,4 @@
+use blackout_core::generator::GeneratorMode;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -152,6 +153,7 @@ pub async fn process_request(
             handle_restore_snapshot(ctx, uuid, version).await
         }
         Request::PasswordGen { pass_type } => handle_password_gen(&pass_type).await,
+        Request::LoadGeneratorConfig => handle_load_generator_config().await,
     }
 }
 
@@ -422,12 +424,14 @@ async fn handle_password_gen(pass_type: &str) -> Response {
     let config = DaemonConfig::load_config();
 
     let pass_result = match pass_type {
-        "passphrase" => blackout_core::generator::generate_passphrase(
-            config.password_generation.word_count,
-            &config.password_generation.separator.to_string(),
-            config.password_generation.capitalize,
+        "passphrase" => blackout_core::generator::generate(
+            GeneratorMode::Passphrase,
+            &config.password_generation,
         ),
-        "password" => blackout_core::generator::generate_password(&config.password_generation),
+        "password" => blackout_core::generator::generate(
+            GeneratorMode::RandomChars,
+            &config.password_generation,
+        ),
         _ => return Response::Error(format!("Invalid password generation type: {}", pass_type)),
     };
 
@@ -435,6 +439,11 @@ async fn handle_password_gen(pass_type: &str) -> Response {
         Ok(generated_password) => Response::Ok(generated_password),
         Err(e) => Response::Error(format!("Failed to generate password: {}", e)),
     }
+}
+
+async fn handle_load_generator_config() -> Response {
+    let config = DaemonConfig::load_config();
+    Response::Ok(serde_json::to_string(&config.password_generation).unwrap_or_default())
 }
 
 // No lock

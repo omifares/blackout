@@ -23,41 +23,29 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     match &app.state {
         AppState::InitialCheck => components::render_initial_check(frame, area),
 
-        AppState::UnlockPrompt(field) => {
-            components::render_form(frame, area, "Unlock Vault", &[field.clone()], app)
-        }
+        AppState::UnlockPrompt => components::render_form(frame, area, "Unlock Vault", app),
         AppState::VaultLocked => components::render_locked_vault(frame, area),
 
         AppState::EntriesList => views::entry_list::render(frame, area, app),
-        AppState::ViewEntry(fields, ..) => {
-            components::render_form(frame, area, "View entry", fields, app)
-        }
+        AppState::ViewEntry(_) => components::render_form(frame, area, "View entry", app),
         AppState::Settings(_) => views::settings::render(frame, area, app),
         AppState::SnapshotList => views::snapshots::render(frame, area, app),
         AppState::ConfirmAction { action, .. } => {
             components::render_pending_action(frame, area, action)
         }
-        AppState::NewEntryForm(fields) => {
-            components::render_form(frame, area, "New entry", fields, app)
-        }
-        AppState::UpdateEntry(fields) => {
-            components::render_form(frame, area, "Edit entry", fields, app)
-        }
-        AppState::ChangeMasterPassword(fields) => {
-            components::render_form(frame, area, "Change Master Password", fields, app)
+        AppState::NewEntryForm => components::render_form(frame, area, "New entry", app),
+        AppState::UpdateEntry => components::render_form(frame, area, "Edit entry", app),
+        AppState::ChangeMasterPassword => {
+            components::render_form(frame, area, "Change Master Password", app)
         }
         AppState::PasswordGenerator(state) => {
-            components::render_password_generator_form(frame, area, "Pass Generator", &vec![
-                FieldConfig::text("Length"),
-                FieldConfig::text("Mode"),
-                FieldConfig::text("Word Count"),
-                FieldConfig::text("Separator"),
-                FieldConfig::text("Capitalize"),
-                FieldConfig::text("Uppercase"),
-                FieldConfig::text("Lowercase"),
-                FieldConfig::text("Numbers"),
-                FieldConfig::text("Symbols"),
-            ], &state.form_state, state.generated_password.as_ref());
+            components::render_password_generator_form(
+                frame,
+                area,
+                "Pass Generator",
+                state.generated_password.as_ref(),
+                app,
+            );
         }
     }
 

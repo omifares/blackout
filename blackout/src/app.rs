@@ -1,3 +1,4 @@
+use blackout_core::generator::GeneratorConfig;
 use blackout_core::ipc::{
     EntryInput, EntryUpdateInput, Request, Response, VaultListPayload, VaultSnapshotPayload,
 };
@@ -5,7 +6,8 @@ use blackout_core::ipc::{
 use blackout_core::vault::{Entry, VaultSnapshot};
 
 use crate::state::{
-    FieldConfig, FormState, PasswordGeneratorState, PendingAction, SelectedItem, SettingsState,
+    FieldConfig, FieldType, FieldValue, FormState, PasswordGeneratorState, PendingAction,
+    SelectedItem, SettingsState,
 };
 
 use ratatui::widgets::TableState;
@@ -18,14 +20,14 @@ use std::time::Instant;
 #[derive(PartialEq, Debug, Clone)]
 pub enum AppState {
     InitialCheck,
-    UnlockPrompt(FieldConfig),
+    UnlockPrompt,
     VaultLocked,
     EntriesList,
-    NewEntryForm(Vec<FieldConfig>),
-    ViewEntry(Vec<FieldConfig>, uuid::Uuid),
-    UpdateEntry(Vec<FieldConfig>),
+    NewEntryForm,
+    ViewEntry(uuid::Uuid),
+    UpdateEntry,
     Settings(SettingsState),
-    ChangeMasterPassword(Vec<FieldConfig>),
+    ChangeMasterPassword,
     SnapshotList,
     ConfirmAction {
         action: PendingAction,
@@ -80,7 +82,7 @@ impl App {
 
     pub fn get_selected_item(&self) -> Option<SelectedItem<'_>> {
         match &self.state {
-            AppState::EntriesList | AppState::UpdateEntry(_) => self
+            AppState::EntriesList | AppState::UpdateEntry => self
                 .table_state
                 .selected()
                 .and_then(|i| self.entries.get(i))
@@ -107,7 +109,7 @@ impl App {
     pub fn check_vault_status(&mut self) {
         if matches!(
             self.state,
-            AppState::UnlockPrompt(_) | AppState::UpdateEntry(_) | AppState::NewEntryForm(_)
+            AppState::UnlockPrompt | AppState::UpdateEntry | AppState::NewEntryForm
         ) {
             return;
         }
@@ -159,9 +161,9 @@ impl App {
         }
     }
 
-    pub fn unlock_vault(&mut self, password: String) -> bool {
+    pub fn unlock_vault(&mut self, password: &str) -> bool {
         match crate::send_command(Request::Unlock {
-            master_password: password,
+            master_password: password.to_owned(),
         }) {
             Ok(Response::Ok(_)) => {
                 self.vault_unlocked = true;
@@ -184,7 +186,9 @@ impl App {
     pub fn lock_vault(&mut self) {
         let _ = crate::send_command(Request::Lock);
         self.vault_unlocked = false;
-        self.state = AppState::UnlockPrompt(FieldConfig::password("Password"));
+        self.form_state.clear();
+        self.form_state.fields = vec![FieldConfig::password("Password")];
+        self.state = AppState::UnlockPrompt;
     }
 
     pub fn load_entries(&mut self) {
@@ -241,11 +245,15 @@ impl App {
     }
 
     pub fn get_input_for_field(&self, index: usize) -> &str {
-        self.form_state
-            .fields
-            .get(index)
-            .map(|s| s.as_str())
-            .unwrap_or("")
+        match self.form_state.fields.get(index) {
+            Some(field) => match &field.value {
+                FieldValue::Text(text) => text.as_str(),
+                FieldValue::Choice(_) => "",
+                FieldValue::Boolean(_) => "",
+                FieldValue::Number(_) => "",
+            },
+            None => "",
+        }
     }
 
     pub fn submit_form_update(&mut self) {
@@ -262,16 +270,23 @@ impl App {
             }
         };
 
-        let service = &self.form_state.fields[0];
-        let user = &self.form_state.fields[1];
-        let password = &self.form_state.fields[2];
-
-        let entry_ctx = EntryUpdateInput {
+        let mut entry_ctx = EntryUpdateInput {
             uuid,
-            service: Some(service.clone()),
-            username: Some(user.clone()),
-            password: Some(password.clone()),
+            service: None,
+            username: None,
+            password: None,
         };
+
+        for field in &self.form_state.fields {
+            if let FieldValue::Text(ref text) = field.value {
+                match field.field_type {
+                    FieldType::Service => entry_ctx.service = Some(text.clone()),
+                    FieldType::Username => entry_ctx.username = Some(text.clone()),
+                    FieldType::Password => entry_ctx.password = Some(text.clone()),
+                    _ => {}
+                }
+            }
+        }
 
         match crate::send_command(Request::UpdateEntry { entry_ctx }) {
             Ok(Response::Ok(_)) => {
@@ -286,20 +301,30 @@ impl App {
     }
 
     pub fn submit_form_add(&mut self) {
-        let service = &self.form_state.fields[0];
-        let user = &self.form_state.fields[1];
-        let password = &self.form_state.fields[2];
+        let mut entry_ctx = EntryInput {
+            service: String::new(),
+            username: String::new(),
+            password: String::new(),
+        };
 
-        if service.is_empty() || user.is_empty() || password.is_empty() {
+        for field in &self.form_state.fields {
+            if let FieldValue::Text(text) = &field.value {
+                match field.field_type {
+                    FieldType::Service => entry_ctx.service = text.clone(),
+                    FieldType::Username => entry_ctx.username = text.clone(),
+                    FieldType::Password => entry_ctx.password = text.clone(),
+                    _ => {}
+                }
+            }
+        }
+
+        if entry_ctx.service.is_empty()
+            || entry_ctx.username.is_empty()
+            || entry_ctx.password.is_empty()
+        {
             self.set_status("All fields are required!".into());
             return;
         }
-
-        let entry_ctx = EntryInput {
-            service: service.clone(),
-            username: user.clone(),
-            password: password.clone(),
-        };
 
         match crate::send_command(Request::AddEntry { entry_ctx }) {
             Ok(Response::Ok(_)) => {
@@ -314,33 +339,51 @@ impl App {
     }
 
     pub fn submit_form_update_master_password(&mut self) {
-        let old = self.form_state.fields[0].clone();
-        let new: String = self.form_state.fields[1].clone();
-        let confirm: String = self.form_state.fields[2].clone();
+        let old_password = if let FieldValue::Text(text) = &self.form_state.fields[1].value {
+            text.clone()
+        } else {
+            String::new()
+        };
 
-        let pass_valid = self.unlock_vault(old.clone());
+        let new_password = if let FieldValue::Text(text) = &self.form_state.fields[2].value {
+            text.clone()
+        } else {
+            String::new()
+        };
 
+        if new_password.is_empty() || old_password.is_empty() {
+            self.set_status("Fields cannot be empty!".into());
+            return;
+        }
+
+        let confirm_password = if let FieldValue::Text(text) = &self.form_state.fields[3].value {
+            text.clone()
+        } else {
+            String::new()
+        };
+
+        if new_password.is_empty() || old_password.is_empty() {
+            self.set_status("Fields cannot be empty!".into());
+            return;
+        }
+
+        if new_password != confirm_password {
+            self.set_status("New passwords do not match!".into());
+            return;
+        }
+
+        if new_password == old_password {
+            self.set_status("New password cannot be the same!".into());
+            return;
+        }
+
+        let pass_valid = self.unlock_vault(&old_password);
         if !pass_valid {
             self.set_status("Master Password invalid!".into());
             return;
         }
 
-        if new.is_empty() || old.is_empty() {
-            self.set_status("Fields cannot be empty!".into());
-            return;
-        }
-
-        if new != confirm {
-            self.set_status("New passwords do not match!".into());
-            return;
-        }
-
-        if new == old {
-            self.set_status("New password cannot be the same!".into());
-            return;
-        }
-
-        match crate::send_command(Request::UpdateMasterPassword { new_password: new }) {
+        match crate::send_command(Request::UpdateMasterPassword { new_password }) {
             Ok(Response::Ok(_)) => {
                 self.state = AppState::EntriesList;
                 self.set_status("Master password updated!".into());
@@ -353,9 +396,9 @@ impl App {
 
     pub fn submit_form(&mut self) {
         match &self.state {
-            AppState::NewEntryForm(_) => self.submit_form_add(),
-            AppState::UpdateEntry(_) => self.submit_form_update(),
-            AppState::ChangeMasterPassword(_) => self.submit_form_update_master_password(),
+            AppState::NewEntryForm => self.submit_form_add(),
+            AppState::UpdateEntry => self.submit_form_update(),
+            AppState::ChangeMasterPassword => self.submit_form_update_master_password(),
             _ => {}
         }
     }
@@ -365,7 +408,12 @@ impl App {
             "{} Error: {}\nData: {}",
             action,
             err,
-            self.form_state.fields.join(",")
+            self.form_state
+                .fields
+                .iter()
+                .map(|f| f.label)
+                .collect::<Vec<_>>()
+                .join(",")
         );
         let _ = std::fs::write("blackout_debug.txt", debug_info);
         self.set_status(format!("{} failed. Check debug log.", action));
@@ -410,12 +458,28 @@ impl App {
     pub fn populate_form(&mut self, uuid: uuid::Uuid) {
         if let Ok(Response::Ok(data)) = crate::send_command(Request::GetEntryById { uuid }) {
             if let Ok(entry) = serde_json::from_str::<Entry>(&data) {
-                self.form_state.fields[0] = entry.service.to_string();
-                self.form_state.fields[1] = entry.username.to_string();
-                self.form_state.fields[2] = entry.secret.to_string();
+                self.form_state.fields = vec![
+                    FieldConfig {
+                        value: FieldValue::Text(entry.service),
+                        ..FieldConfig::service("Service")
+                    },
+                    FieldConfig {
+                        value: FieldValue::Text(entry.username),
+                        ..FieldConfig::username("Username")
+                    },
+                    FieldConfig {
+                        value: FieldValue::Text(entry.secret),
+                        ..FieldConfig::password("Password")
+                    },
+                ];
+
+                self.form_state.current_field = 0;
+                self.form_state.cursor_index = 0;
+            } else {
+                self.set_status("Failed to parse entry details. Check debug log.".into());
             }
         } else {
-            self.set_status("failed to load datails. Check debug log.".into());
+            self.set_status("Failed to load details. Check debug log.".into());
         }
     }
 
@@ -485,12 +549,19 @@ impl App {
             }
         }
     }
-    pub fn generate_password(&mut self) {
-        if let AppState::PasswordGenerator(state) = &mut self.state {
-            let result = state.generate_password();
-            match result {
-                Ok(msg) => self.set_status(msg.into()),
-                Err(msg) => self.set_status(msg.into()),
+
+    pub fn load_generator_config(&mut self) -> GeneratorConfig {
+        match crate::send_command(Request::LoadGeneratorConfig) {
+            Ok(Response::Ok(config)) => {
+                serde_json::from_str(&config).unwrap_or_else(|_| GeneratorConfig::default())
+            }
+            Ok(_) => {
+                self.set_status("Unexpected response from daemon".into());
+                GeneratorConfig::default()
+            }
+            Err(e) => {
+                self.set_status(format!("Failed to load generator config: {}", e));
+                GeneratorConfig::default()
             }
         }
     }

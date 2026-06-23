@@ -50,7 +50,23 @@ impl Default for GeneratorConfig {
     }
 }
 
-pub fn generate_password(config: &GeneratorConfig) -> Result<String, &'static str> {
+impl GeneratorMode {
+    pub fn from_index(index: usize) -> Self {
+        match index {
+            0 => GeneratorMode::RandomChars,
+            _ => GeneratorMode::Passphrase,
+        }
+    }
+}
+
+pub fn generate(mode: GeneratorMode, config: &GeneratorConfig) -> Result<String, &'static str> {
+    match mode {
+        GeneratorMode::RandomChars => generate_random_chars(config),
+        GeneratorMode::Passphrase => generate_passphrase(config),
+    }
+}
+
+fn generate_random_chars(config: &GeneratorConfig) -> Result<String, &'static str> {
     let mut charset = String::new();
 
     if config.lowercase {
@@ -83,25 +99,21 @@ pub fn generate_password(config: &GeneratorConfig) -> Result<String, &'static st
     Ok(password)
 }
 
-pub fn generate_passphrase(
-    word_count: usize,
-    separator: &str,
-    capitalize: bool,
-) -> Result<String, &'static str> {
-    if word_count == 0 {
+fn generate_passphrase(config: &GeneratorConfig) -> Result<String, &'static str> {
+    if config.word_count == 0 {
         return Err("A contagem de palavras deve ser maior que zero.");
     }
 
     let mut rng = OsRng;
     let wordlist = get_wordlist();
 
-    let mut chosen_words = Vec::with_capacity(word_count);
+    let mut chosen_words = Vec::with_capacity(config.word_count);
 
-    for _ in 0..word_count {
+    for _ in 0..config.word_count {
         let idx = rng.gen_range(0..wordlist.len());
         let mut word = wordlist[idx].to_string();
 
-        if capitalize {
+        if config.capitalize {
             if let Some(first_char) = word.chars().next() {
                 let first_upper = first_char.to_uppercase().to_string();
                 word = format!("{}{}", first_upper, &word[first_char.len_utf8()..]);
@@ -110,7 +122,7 @@ pub fn generate_passphrase(
         chosen_words.push(word);
     }
 
-    Ok(chosen_words.join(separator))
+    Ok(chosen_words.join(&config.separator.to_string()))
 }
 
 #[cfg(test)]
@@ -119,7 +131,13 @@ mod tests {
 
     #[test]
     fn test_passphrase_generation() {
-        let res = generate_passphrase(4, "-", true).unwrap();
+        let res = generate_passphrase(&GeneratorConfig {
+            word_count: 4,
+            separator: '-',
+            capitalize: true,
+            ..Default::default()
+        })
+        .unwrap();
         let split: Vec<&str> = res.split('-').collect();
         assert_eq!(split.len(), 4);
 

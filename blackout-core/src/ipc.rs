@@ -45,6 +45,7 @@ pub enum Request {
     ListSnapshots,
     RestoreSnapshot { version: u32, uuid: uuid::Uuid },
     PasswordGen { pass_type: String },
+    LoadGeneratorConfig,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

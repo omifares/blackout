@@ -1,6 +1,8 @@
+use crate::state::{FieldConfig, FieldValue};
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct FormState {
-    pub fields: Vec<String>,
+    pub fields: Vec<FieldConfig>,
     pub current_field: usize,
     pub cursor_index: usize,
     pub obscure_inputs: bool,
@@ -9,7 +11,7 @@ pub struct FormState {
 impl FormState {
     pub fn new() -> Self {
         Self {
-            fields: vec![String::new(), String::new(), String::new()],
+            fields: vec![],
             current_field: 0,
             cursor_index: 0,
             obscure_inputs: true,
@@ -18,7 +20,7 @@ impl FormState {
 
     pub fn clear(&mut self) {
         for field in self.fields.iter_mut() {
-            field.clear();
+            field.value = FieldValue::Text(String::new());
         }
         self.current_field = 0;
         self.cursor_index = 0;

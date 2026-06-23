@@ -13,3 +13,4 @@ serde = { version = "1.0", features = ["derive"] }
 uuid = "1.23.0"
 chrono = "0.4.44"
 arboard = "3.6.1"
+zeroize = "1.9.0"
