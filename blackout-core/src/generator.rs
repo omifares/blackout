@@ -59,10 +59,10 @@ impl GeneratorMode {
     }
 }
 
-pub fn generate(mode: GeneratorMode, config: &GeneratorConfig) -> Result<String, &'static str> {
-    match mode {
-        GeneratorMode::RandomChars => generate_random_chars(config),
-        GeneratorMode::Passphrase => generate_passphrase(config),
+pub fn generate(config: GeneratorConfig) -> Result<String, &'static str> {
+    match config.mode {
+        GeneratorMode::RandomChars => generate_random_chars(&config),
+        GeneratorMode::Passphrase => generate_passphrase(&config),
     }
 }
 

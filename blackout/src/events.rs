@@ -5,8 +5,9 @@ use crate::state::PasswordGeneratorState;
 use crate::state::settings::{
     FieldConfig, FieldType, FieldValue, PendingAction, SettingsOption, SettingsState,
 };
-use blackout_core::generator::GeneratorConfig;
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+const MAX_PASSWORD_LENGTH: usize = 999;
 
 pub fn handle_event(app: &mut App, key: KeyEvent) {
     app.last_interaction = Instant::now();
@@ -45,20 +46,12 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                     match &mut field_config.value {
                         FieldValue::Text(field_text) => {
                             let cursor = app.form_state.cursor_index;
-
-                            // Converte a string para um array de caracteres seguros
                             let mut chars: Vec<char> = field_text.chars().collect();
-
-                            // Garante que o cursor nunca é maior que o tamanho real da string
                             let insert_pos = cursor.min(chars.len());
 
-                            // Insere o caractere
                             chars.insert(insert_pos, c);
-
-                            // Reconstrói a string
                             *field_text = chars.into_iter().collect();
 
-                            // Move o cursor uma posição para a frente
                             app.form_state.cursor_index += 1;
                         }
                         _ => {}
@@ -120,19 +113,6 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
             match key.code {
                 KeyCode::Esc => {
                     // Quit
-                }
-                KeyCode::F(3) => {
-                    let config = GeneratorConfig::default();
-
-                    let fields = FieldConfig::from_config(&config);
-
-                    app.form_state.clear();
-                    app.form_state.fields = fields;
-
-                    app.state = AppState::PasswordGenerator(PasswordGeneratorState {
-                        session_config: config,
-                        generated_password: None,
-                    });
                 }
                 _ => {
                     app.form_state.clear();
@@ -270,6 +250,16 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
         },
 
         AppState::NewEntryForm | AppState::UpdateEntry | AppState::ChangeMasterPassword => {
+            match key.modifiers {
+                KeyModifiers::CONTROL => match key.code {
+                    KeyCode::Char('a') => {
+                        app.auto_fill_password();
+                        return;
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
             match key.code {
                 KeyCode::Tab => {
                     app.form_state.current_field =
@@ -372,8 +362,9 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                     }
                 }
                 KeyCode::F(2) => {
-                    app.form_state.fields[app.form_state.current_field].show_password =
-                        !app.form_state.fields[app.form_state.current_field].show_password;
+                    for field in &mut app.form_state.fields {
+                        field.show_password = !field.show_password;
+                    }
                 }
                 KeyCode::Enter => {
                     app.submit_form();
@@ -413,16 +404,21 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                             app.state = AppState::SnapshotList
                         }
                         SettingsOption::PasswordGenerator => {
-                            let gen_state = PasswordGeneratorState {
-                                session_config: app.load_generator_config(),
+                            let config =
+                                app.generator_session_config.clone().unwrap_or_else(|| {
+                                    let loaded = app.load_generator_config();
+                                    app.generator_session_config = Some(loaded.clone());
+                                    loaded
+                                });
+
+                            let pass_generator = PasswordGeneratorState {
+                                session_config: config,
                                 generated_password: None,
                             };
 
                             app.form_state.clear();
-                            app.form_state.fields = gen_state.build_form_fields();
-
-                            // Muda a tela
-                            app.state = AppState::PasswordGenerator(gen_state);
+                            app.form_state.fields = pass_generator.build_form_fields();
+                            app.state = AppState::PasswordGenerator(pass_generator);
                         }
                     }
                 }
@@ -469,7 +465,8 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
             KeyCode::Char('r') => {
                 if let AppState::PasswordGenerator(ref mut state) = app.state {
                     state.sync_config(&app.form_state.fields);
-                    state.generate_password();
+                    app.generator_session_config = Some(state.session_config.clone());
+                    let _ = state.generate_password();
                 }
             }
             KeyCode::Tab => {
@@ -511,7 +508,7 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                                 }
                             }
                             FieldValue::Number(ref mut num) => {
-                                if *num < 100 {
+                                if *num < MAX_PASSWORD_LENGTH as u16 {
                                     *num += 1;
                                 }
                             }
@@ -573,10 +570,20 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                                 app.form_state.cursor_index += 1;
                             }
                             FieldValue::Number(ref mut num) => {
-                                if !c.is_ascii_digit() {
-                                    return;
+                                if let Some(digit) = c.to_digit(10) {
+                                    if let Some(new_val) = num
+                                        .checked_mul(10)
+                                        .and_then(|n| n.checked_add(digit as u16))
+                                    {
+                                        if new_val <= MAX_PASSWORD_LENGTH as u16 {
+                                            *num = new_val;
+                                        } else {
+                                            app.set_status("Limite máximo atingido!".into());
+                                        }
+                                    } else {
+                                        app.set_status("Número muito grande!".into());
+                                    }
                                 }
-                                *num = (*num * 10 + c.to_digit(10).unwrap() as u16) as u16;
                             }
                             _ => {}
                         }
@@ -590,7 +597,7 @@ pub fn handle_event(app: &mut App, key: KeyEvent) {
                     match field_config.value {
                         FieldValue::Number(ref mut num) => {
                             let mut num_str = num.to_string();
-                            if num_str.len() > 1 {
+                            if num_str.len() > 1 && app.form_state.cursor_index > 0 {
                                 num_str.remove(app.form_state.cursor_index - 1);
                                 *num = num_str.parse().unwrap();
                             } else {

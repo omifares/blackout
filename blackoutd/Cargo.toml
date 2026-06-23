@@ -1,11 +1,11 @@
 [package]
 name = "blackoutd"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 
 [dependencies]
 ctrlc = "3.5.1"
-blackout-core = { path = "../blackout-core" }
+blackout-core = { path = "../blackout-core", version = "0.3.2" }
 serde_cbor = "0.11.2"
 tokio = { version = "1.50.0", features = ["rt-multi-thread", "sync", "time", "macros", "net", "io-util"] }
 anyhow = "1.0.102"
