@@ -341,13 +341,13 @@ impl App {
     }
 
     pub fn submit_form_update_master_password(&mut self) {
-        let old_password = if let FieldValue::Text(text) = &self.form_state.fields[1].value {
+        let old_password = if let FieldValue::Text(text) = &self.form_state.fields[0].value {
             text.clone()
         } else {
             String::new()
         };
 
-        let new_password = if let FieldValue::Text(text) = &self.form_state.fields[2].value {
+        let new_password = if let FieldValue::Text(text) = &self.form_state.fields[1].value {
             text.clone()
         } else {
             String::new()
@@ -358,7 +358,7 @@ impl App {
             return;
         }
 
-        let confirm_password = if let FieldValue::Text(text) = &self.form_state.fields[3].value {
+        let confirm_password = if let FieldValue::Text(text) = &self.form_state.fields[2].value {
             text.clone()
         } else {
             String::new()
