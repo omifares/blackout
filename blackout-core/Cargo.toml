@@ -2,6 +2,10 @@
 name = "blackout-core"
 version = "0.3.2"
 edition = "2024"
+description = "Core library for Blackout password manager: encryption, storage, and vault logic."
+license = "MIT"
+repository = "https://github.com/omifares/blackout"
+documentation = "https://github.com/omifares/blackout"
 
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }

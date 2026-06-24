@@ -2,9 +2,13 @@
 name = "blackout"
 version = "0.3.2"
 edition = "2024"
+description = "Ratatui-based TUI for Blackout password manager."
+license = "MIT"
+repository = "https://github.com/omifares/blackout"
+documentation = "https://github.com/omifares/blackout"
 
 [dependencies]
-blackout-core = { path = "../blackout-core" }
+blackout-core = { path = "../blackout-core", version = "0.3.2" }
 color-eyre = "0.6.5"
 crossterm = "0.29.0"
 ratatui = "0.30.0"

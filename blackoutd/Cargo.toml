@@ -2,6 +2,10 @@
 name = "blackoutd"
 version = "0.3.2"
 edition = "2024"
+description = "Daemon for Blackout password manager: starts the Blackout service and handles incoming requests."
+license = "MIT"
+repository = "https://github.com/omifares/blackout"
+documentation = "https://github.com/omifares/blackout"
 
 [dependencies]
 ctrlc = "3.5.1"
