@@ -4,29 +4,21 @@ Uma ferramenta de gerenciamento de senhas segura e minimalista, construída em *
 
 ## Características Principais
 
-  * **Criptografia Autenticada**: Utiliza **XChaCha20Poly1305** (AEAD de 256-bit) para garantir confidencialidade e integridade dos dados.
-  * **Key Derivation Robusta**: Implementa **Argon2id** com parâmetros configuráveis, oferecendo resistência contra ataques de GPU/ASIC.
-  * **Arquitetura Cliente-Servidor**: Separação rigorosa entre o daemon de armazenamento (`blackoutd`) e o cliente TUI (`blackout`) via sockets Unix.
-  * **Segurança Avançada e Memória**:
-      * Uso extensivo da crate `zeroize` para limpar chaves e buffers sensíveis imediatamente após o uso.
-      * Suporte nativo à flag `--mlock` para impedir que o Sistema Operacional faça *swap* de dados sensíveis da memória RAM para o disco.
-  * **Snapshots e Versionamento**: Histórico automático de alterações do cofre, protegendo os dados contra edições acidentais (com suporte configurável via `max_snapshots`).
-  * **Rotação de Chaves**: Capacidade de alterar a sua *Master Password* nativamente, reencriptando todo o cofre e rotacionando salt/nonce de forma segura.
-  * **Interface TUI Moderna e Reativa**:
-      * Cliente CLI construído com `ratatui`.
-      * Indicador de versão do cofre em tempo real.
-      * Modais de confirmação de segurança (prevenindo exclusões por "dedos gordos").
-      * Integração nativa com **Wayland** para cópia ao *clipboard* (com limpeza automática configurável).
+  * **Criptografia Autenticada**: Utiliza **XChaCha20Poly1305** (AEAD de 256-bit).
+  * **Key Derivation Robusta**: **Argon2id** com parâmetros configuráveis.
+  * **Gerador de Senhas Integrado**: Suporte para geração de senhas seguras (caracteres aleatórios e passphrases) com autofill integrado.
+  * **Arquitetura Cliente-Servidor**: Daemon (`blackoutd`) + Cliente TUI (`blackout`).
+  * **Segurança Avançada**: Uso de `zeroize` para limpeza de memória e suporte a `--mlock`.
+  * **Snapshot e Versão**: Histórico automático de cofre.
+  * **Interface TUI Moderna**: Cliente CLI construído com `ratatui`.
 
 ## Estrutura do Projeto
 
-O projeto é dividido em três componentes principais para garantir modularidade e segurança:
-
 ```text
 blackout/
-├── blackout-core/  # Biblioteca central: Criptografia, Storage (XChaCha20Poly1305) e Versionamento
-├── blackoutd/      # Daemon: Serviço background gerido via systemd que mantém o estado e gerencia IPC
-└── blackout/       # TUI: Interface interativa construida com Ratatui
+├── blackout-core/  # Biblioteca central (Criptografia e lógica de geração)
+├── blackoutd/      # Daemon: Serviço background (IPC)
+└── blackout/    # TUI: Interface interativa (Publicado como 'blackout-ui')
 ```
 
 ### Fluxo de Criptografia
@@ -34,15 +26,17 @@ blackout/
 1.  **Derivação**: Password + Salt → **Argon2id** → 256-bit Key.
 2.  **Proteção**: Vault + Key + Nonce → **XChaCha20Poly1305** → Encrypted Storage.
 
-## Como usar
+---
 
-### Instalação
+## Instalação
+
+### Build from source (recomendado)
 
 Certifique-se de ter o Rust (1.92+) instalado em um ambiente Linux com systemd.
 
 ```bash
 # Clone o repositório
-git clone https://github.com/Vinicin1101/blackout
+git clone https://github.com/omifares/blackout
 cd blackout
 
 # Dê permissão de execução ao script
@@ -56,23 +50,17 @@ chmod +x setup.sh
 ./setup.sh install --mlock
 ```
 
-### Execução e Configuração
-
-A instalação configura o `blackoutd` para rodar automaticamente em background como um serviço de usuário (`systemctl --user`). Você não precisa iniciá-lo manualmente.
-
-Para gerenciar suas senhas, basta chamar o cliente TUI de qualquer terminal:
-
+### Cargo
 ```bash
-blackout
+# TUI
+cargo install blackout-ui
+
+# Daemon
+cargo install blackoutd
 ```
+> Nota: A instalação via cargo fornece apenas o binário do cliente (blackout). Ela não configura o daemon (blackoutd) nem cria o arquivo de serviço blackoutd.service do systemd.
 
-**Personalização (Opcional):**
-O Blackout suporta um arquivo `config.toml` (em `~/.config/blackout/` ou equivalente) onde você pode definir:
-
-  * `auto_lock_timeout`: Tempo de inatividade para bloquear o cofre automaticamente.
-  * `max_snapshots`: Quantidade de backups mantidos do cofre (Poda estrita).
-
-### Desinstalação
+## Desinstalação
 
 Para remover os binários e desativar o serviço:
 
@@ -82,20 +70,56 @@ Para remover os binários e desativar o serviço:
 # Para destruir o cofre e os dados permanentemente, use: ./setup.sh uninstall --purge
 ```
 
+---
+
+## Execução e Configuração
+
+A instalação atraveś do `setup.sh` configura o `blackoutd` para rodar automaticamente em background como um serviço de usuário (`systemctl --user`). Você não precisa iniciá-lo manualmente.
+
+Para gerenciar suas senhas, basta chamar o cliente TUI de qualquer terminal:
+
+```bash
+blackout
+```
+
+### Gerenciamento de Estado e Configurações (config.toml vs Sessão)
+
+O Blackout adota uma arquitetura transacional rígida e unidirecional para proteger a integridade das suas preferências no disco:
+
+- O Arquivo é a Fonte da Verdade: O arquivo `config.toml` (`XDG_DATA_HOME/blackout` ou `~/.local/share/blackout`) nunca é alterado ou reescrito automaticamente pela interface (UI). A interface apenas lê e reflete o que está escrito nele.
+
+- Isolamento em Sandbox (Sessão Volátil): Qualquer alteração feita nas definições do Gerador de Senhas através dos menus da interface altera apenas o estado do programa em memória para a sessão atual. Assim que o programa é finalizado ou fechado, essas alterações são descartadas e o Blackout carregará o config.toml limpo na próxima execução.
+
+- Comportamento do Autofill: Para garantir consistência e segurança contra configurações acidentais em tempo de execução, o mecanismo de Autofill (Ctrl+A) respeita estritamente as regras do arquivo config.toml, e não as modificações temporárias feitas na sessão da interface.
+
+### Modos de Geração Suportados no config.toml
+
+O motor do gerador contido no blackout-core possui dois modos distintos configuráveis ():
+
+- Password (Random Chars): Geração baseada em entropia pura combinando caracteres alfanuméricos e símbolos especiais com comprimentos customizáveis.
+- Passphrase (Wordlist EFF): Geração de frases de segurança baseadas em dicionários de alta entropia da EFF (Electronic Frontier Foundation), ideais para senhas mestras ou credenciais que exigem memorização sem perda de força criptográfica.
+
+### Veja mais informações de configurações [CONFIG](CONFIG.md)
+
+---
+
 ## Atalhos da Interface
 
 [![Built With Ratatui](https://img.shields.io/badge/Built_With_Ratatui-000?logo=ratatui&logoColor=fff)](https://ratatui.rs/)
 
-| Tecla | Ação |
-| :--- | :--- |
-| `Enter` | Ver detalhes da entrada / Submeter formulário / Copiar campo para área de transferêcia (wayland) |
-| `n` | Criar nova entrada |
-| `e` | Editar a entrada selecionada |
-| `F2` | Alternar visibilidade da senha (mostrar/ocultar) |
-| `Backspace` | Excluir entrada selecionada |
-| `x` | Bloquear cofre imediatamente |
-| `Esc` | Voltar / Cancelar ação / Sair |
-| `Tab` / `B-Tab` | Navegar entre campos dos formulários |
+| Tecla | Ação | Contexto |
+| :--- | :--- | :--- |
+| `Ctrl + A` | Gerar e preencher senha (Autofill) | Formulário de Senha |
+| `Enter` | Ver detalhes / Submeter / Copiar | Geral |
+| `n` | Criar nova entrada | Listagem |
+| `e` | Editar a entrada selecionada | Listagem |
+| `F2` | Alternar visibilidade da senha,Formulários |
+| `Setas` | Navegação,Geral |
+| `x` | Bloquear cofre | Geral |
+| `Esc` | Voltar / Cancelar | Geral |
+| `Tab` | Navegar entre campos | Formulários |
+
+---
 
 ## Modelo de Ameaça
 
@@ -111,6 +135,8 @@ Para remover os binários e desativar o serviço:
   * **Comprometimento do Daemon**: Se o daemon for explorado por outro processo no mesmo usuário enquanto o cofre estiver aberto na memória.
   * **Keyloggers**: Captura de teclas no nível do Sistema Operacional.
 
+---
+
 ## Roadmap
 
   - [x] Interface TUI com Tabelas e Layout Centralizado
@@ -119,9 +145,12 @@ Para remover os binários e desativar o serviço:
   - [x] Rotação de chaves e troca de Master Password
   - [x] Criação automática de Snapshots / Versionamento de Cofre
   - [x] Restauração de Snapshots (Rollback) via UI
+  - [x] Built-in Pass Generator
   - [ ] Exportação segura do cofre via QR Code
   - [ ] CLI (Acesso direto não-interativo para scripts)
   - [ ] Testes de Unidade e Integração
+
+---
 
 ## Licença
 
