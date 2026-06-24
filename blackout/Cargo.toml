@@ -1,5 +1,5 @@
 [package]
-name = "blackout"
+name = "blackout-ui"
 version = "0.3.2"
 edition = "2024"
 description = "Ratatui-based TUI for Blackout password manager."
@@ -18,3 +18,7 @@ uuid = "1.23.0"
 chrono = "0.4.44"
 arboard = "3.6.1"
 zeroize = "1.9.0"
+
+[[bin]]
+name = "blackout"
+path = "src/main.rs"
